@@ -12,6 +12,12 @@ const initialForm = {
   content: "",
 };
 
+const exampleQueries = [
+  "ArgoCD 배포 오류 문서 찾아줘",
+  "8080 포트 충돌 해결 방법",
+  "QA 상태값 규칙 정리",
+];
+
 function visibilityLabel(visibility) {
   return visibility === "private" ? "Private" : "Public";
 }
@@ -22,6 +28,21 @@ function formatDate(value) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function embeddingStatusLabel(status) {
+  switch (status) {
+    case "ready":
+      return "임베딩 완료";
+    case "pending":
+      return "임베딩 대기";
+    case "error":
+      return "임베딩 오류";
+    case "skipped":
+      return "임베딩 건너뜀";
+    default:
+      return status || "상태 없음";
+  }
 }
 
 export default function Dashboard() {
@@ -88,6 +109,7 @@ export default function Dashboard() {
 
   async function handleSignUp() {
     if (!supabase) return;
+
     setAuthMessage("");
     const { error } = await supabase.auth.signUp({
       email,
@@ -97,12 +119,13 @@ export default function Dashboard() {
     setAuthMessage(
       error
         ? error.message
-        : "회원가입 요청을 보냈습니다. Supabase 설정에 따라 이메일 확인 또는 즉시 로그인될 수 있습니다."
+        : "회원가입 요청을 보냈습니다. 설정에 따라 이메일 확인이 필요할 수 있습니다."
     );
   }
 
   async function handleSignIn() {
     if (!supabase) return;
+
     setAuthMessage("");
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -117,6 +140,7 @@ export default function Dashboard() {
 
   async function handleSignOut() {
     if (!supabase) return;
+
     await supabase.auth.signOut();
     setSearchResults([]);
     setSearchAnswer("");
@@ -281,355 +305,405 @@ export default function Dashboard() {
     }
   }
 
+  function applyExampleQuery(query) {
+    setFilters((current) => ({ ...current, query }));
+    setSearchAnswer("");
+    setSearchResults([]);
+  }
+
   return (
-    <main className="page-shell">
-      <section className="hero">
-        <div className="hero-grid">
+    <main className="app-frame">
+      <aside className="app-sidebar">
+        <div className="brand-block">
+          <div className="brand-mark">W</div>
           <div>
-            <span className="badge">Next.js + Supabase + OpenAI</span>
-            <h1 className="headline">
-              공개 문서와 내 문서를
-              <br />
-              같이 검색하는 실제 서비스형 데모
-            </h1>
-            <p className="subtle">
-              Supabase Auth로 로그인하고, 문서를 저장하면 서버에서 임베딩을 생성해 semantic search를 수행합니다.
-              검색 결과는 항상 <code>public OR owner_id = current_user</code> 범위로 제한됩니다.
+            <h1 className="brand-title">WorkNote AI</h1>
+            <p className="brand-subtitle">업무 문서 검색 비서</p>
+          </div>
+        </div>
+
+        <section className="sidebar-section sidebar-auth">
+          <div className="sidebar-header-row">
+            <div>
+              <p className="sidebar-kicker">Auth</p>
+              <p className="sidebar-title">계정 상태</p>
+            </div>
+            <span className={`sidebar-badge ${session ? "sidebar-badge-active" : ""}`}>
+              {session ? "member" : "guest"}
+            </span>
+          </div>
+
+          <div className="stack">
+            <input
+              className="sidebar-input"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="이메일"
+              type="email"
+            />
+            <input
+              className="sidebar-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="비밀번호"
+              type="password"
+            />
+            <div className="sidebar-auth-actions">
+              <button className="sidebar-button sidebar-button-primary" onClick={handleSignIn} type="button">
+                로그인
+              </button>
+              <button className="sidebar-button sidebar-button-muted" onClick={handleSignUp} type="button">
+                회원가입
+              </button>
+            </div>
+            {session ? (
+              <button className="sidebar-button sidebar-button-ghost" onClick={handleSignOut} type="button">
+                로그아웃
+              </button>
+            ) : null}
+            <p className="sidebar-note">
+              {session?.user?.email
+                ? `${session.user.email} 계정으로 로그인되어 있습니다.`
+                : "로그인하지 않으면 public 문서만 검색할 수 있습니다."}
+            </p>
+            {authMessage ? <p className="sidebar-help">{authMessage}</p> : null}
+          </div>
+        </section>
+
+        <section className="sidebar-section">
+          <div className="sidebar-header-row">
+            <div>
+              <p className="sidebar-kicker">Categories</p>
+              <p className="sidebar-title">카테고리</p>
+            </div>
+            <span className="sidebar-badge">auto</span>
+          </div>
+
+          <div className="category-list">
+            {categories.map((item) => (
+              <button
+                key={item.name}
+                className={`category-button-dark ${filters.category === item.name ? "active" : ""}`}
+                onClick={() => setFilters((current) => ({ ...current, category: item.name }))}
+                type="button"
+              >
+                <span>{item.name === "all" ? "전체" : item.name}</span>
+                <small>{item.count}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="sidebar-section">
+          <p className="sidebar-kicker">Try search</p>
+          <div className="example-list">
+            {exampleQueries.map((query) => (
+              <button key={query} className="example-button" onClick={() => applyExampleQuery(query)} type="button">
+                {query}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="sidebar-section sidebar-footer-card">
+          <p className="sidebar-title">Service Demo</p>
+          <p className="sidebar-note">
+            초기 버전의 강한 비주얼 구조를 유지하면서, 현재는 Supabase 로그인과 OpenAI 임베딩 검색 흐름을 함께 담고
+            있습니다.
+          </p>
+        </section>
+      </aside>
+
+      <div className="app-main">
+        <header className="mobile-header">
+          <div className="brand-block">
+            <div className="brand-mark">W</div>
+            <div>
+              <h1 className="brand-title">WorkNote AI</h1>
+              <p className="brand-subtitle">업무 문서 검색 비서</p>
+            </div>
+          </div>
+        </header>
+
+        <section className="hero-card">
+          <div className="hero-floating-badge">Notion-ready Knowledge Assistant</div>
+          <p className="hero-kicker">AI document search</p>
+          <h2 className="hero-heading">“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h2>
+          <p className="hero-description">
+            public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다. Notion에 흩어진 업무 기록, 오류 해결 문서, 메모를 카테고리별로 저장하고 관련 문서를 찾아보세요.
+          </p>
+
+          <div className="hero-stats">
+            <div className="hero-stat-card">
+              <p className="hero-stat-label">Visible Docs</p>
+              <strong>{stats.total}</strong>
+            </div>
+            <div className="hero-stat-card">
+              <p className="hero-stat-label">Public</p>
+              <strong>{stats.publicDocs}</strong>
+            </div>
+            <div className="hero-stat-card">
+              <p className="hero-stat-label">Private</p>
+              <strong>{stats.privateDocs}</strong>
+            </div>
+            <div className="hero-stat-card hero-stat-dark">
+              <p className="hero-stat-label">Embeddings</p>
+              <strong>{stats.readyDocs}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="search-shell">
+          <div className="search-grid">
+            <div className="search-input-wrap">
+              <span className="search-icon">⌕</span>
+              <input
+                className="search-input"
+                placeholder="예: Jenkins에서 브랜치 배포 안 될 때 확인할 문서 찾아줘"
+                value={filters.query}
+                onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
+              />
+            </div>
+
+            <div className="search-controls">
+              <select
+                className="search-select"
+                value={filters.category}
+                onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}
+              >
+                <option value="all">전체 카테고리</option>
+                {categories
+                  .filter((item) => item.name !== "all")
+                  .map((item) => (
+                    <option key={item.name} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+              <select
+                className="search-select"
+                value={filters.visibility}
+                onChange={(event) => setFilters((current) => ({ ...current, visibility: event.target.value }))}
+              >
+                <option value="all">전체 범위</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+              <select className="search-select" value={sort} onChange={(event) => setSort(event.target.value)}>
+                <option value="latest">최신순</option>
+                <option value="title">제목순</option>
+              </select>
+              <button className="search-reset" onClick={resetForm} type="button">
+                작성 초기화
+              </button>
+            </div>
+          </div>
+
+          <div className="search-actions">
+            <button className="primary-action" onClick={handleSemanticSearch} type="button" disabled={searching}>
+              {searching ? "검색 중..." : "AI 검색"}
+            </button>
+            <button
+              className="secondary-action"
+              onClick={() => {
+                setSearchAnswer("");
+                setSearchResults([]);
+                setFilters({ query: "", category: "all", visibility: "all" });
+              }}
+              type="button"
+            >
+              검색 초기화
+            </button>
+            <label className="toggle-row">
+              <input
+                checked={generateAnswer}
+                onChange={(event) => setGenerateAnswer(event.target.checked)}
+                type="checkbox"
+              />
+              <span>답변 요약 함께 생성</span>
+            </label>
+          </div>
+        </section>
+
+        <section className="summary-card">
+          <div className="summary-icon">✦</div>
+          <div>
+            <p className="summary-kicker">AI 추천 요약</p>
+            <p className="summary-text">
+              {searchMessage ||
+                "검색어를 입력하면 의미 기반으로 관련 문서를 찾고, 원하면 답변 요약까지 함께 생성해드립니다."}
             </p>
           </div>
+        </section>
 
-          <div className="auth-card">
-            <div className="topbar">
-              <div>
-                <p className="section-title">Auth</p>
-                <h2 style={{ margin: "10px 0 0" }}>사용자 로그인</h2>
-              </div>
-              <span className={`pill ${session ? "pill-public" : "pill-private"}`}>
-                {session ? "Signed in" : "Guest"}
-              </span>
+        <section className="content-grid">
+          <aside className="composer-panel">
+            <div className="panel-heading">
+              <p className="panel-kicker">New Document</p>
+              <h3>{editingId ? "문서 수정" : "문서 등록"}</h3>
+              <p>기능은 유지하고, 초반 데모처럼 입력 흐름이 한눈에 보이도록 정리했습니다.</p>
             </div>
 
-            <div className="auth-actions" style={{ marginTop: 16 }}>
+            {!session ? <div className="helper-banner warn">문서를 저장하거나 수정하려면 먼저 로그인해야 합니다.</div> : null}
+
+            <form className="form-card" onSubmit={handleSaveDocument}>
               <input
-                className="input"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="이메일"
-                type="email"
+                className="form-input"
+                placeholder="제목"
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                required
               />
               <input
-                className="input"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="비밀번호"
-                type="password"
+                className="form-input"
+                placeholder="카테고리"
+                value={form.category}
+                onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                required
               />
-              <div className="inline-row">
-                <button className="button button-primary" onClick={handleSignIn} type="button">
-                  로그인
+              <input
+                className="form-input"
+                placeholder="태그 (쉼표로 구분)"
+                value={form.tags}
+                onChange={(event) => setForm((current) => ({ ...current, tags: event.target.value }))}
+              />
+              <input
+                className="form-input"
+                placeholder="Notion 링크"
+                type="url"
+                value={form.notionUrl}
+                onChange={(event) => setForm((current) => ({ ...current, notionUrl: event.target.value }))}
+              />
+              <select
+                className="form-input"
+                value={form.visibility}
+                onChange={(event) => setForm((current) => ({ ...current, visibility: event.target.value }))}
+              >
+                <option value="public">Public - 누구나 검색 가능</option>
+                <option value="private">Private - 작성자만 검색 가능</option>
+              </select>
+              <textarea
+                className="form-textarea"
+                placeholder="문서 내용을 적어주세요."
+                value={form.content}
+                onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
+                required
+              />
+              <div className="form-actions">
+                <button className="primary-action" disabled={!session || savingDoc} type="submit">
+                  {savingDoc ? "저장 중..." : editingId ? "수정 저장" : "저장하기"}
                 </button>
-                <button className="button button-secondary" onClick={handleSignUp} type="button">
-                  회원가입
+                <button className="secondary-action" onClick={resetForm} type="button">
+                  입력 비우기
                 </button>
-                {session ? (
-                  <button className="button button-ghost" onClick={handleSignOut} type="button">
-                    로그아웃
-                  </button>
-                ) : null}
               </div>
-              <div className="helper">
-                {session?.user?.email
-                  ? `${session.user.email} 계정으로 로그인되어 있습니다.`
-                  : "로그인하지 않으면 public 문서만 볼 수 있습니다."}
-              </div>
-              {authMessage ? <p className="muted">{authMessage}</p> : null}
-            </div>
-          </div>
-        </div>
+            </form>
+          </aside>
 
-        <div className="stats">
-          <div className="stat-card">
-            <span className="section-title">Visible Docs</span>
-            <strong>{stats.total}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="section-title">Public</span>
-            <strong>{stats.publicDocs}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="section-title">Private</span>
-            <strong>{stats.privateDocs}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="section-title">Embeddings Ready</span>
-            <strong>{stats.readyDocs}</strong>
-          </div>
-        </div>
-      </section>
+          <section className="results-panel">
+            {searchAnswer ? (
+              <article className="answer-card-ui">
+                <p className="panel-kicker">Generated Answer</p>
+                <h3>AI 요약 답변</h3>
+                <pre>{searchAnswer}</pre>
+              </article>
+            ) : null}
 
-      <section className="panel toolbar">
-        <div className="toolbar-grid">
-          <input
-            className="input"
-            placeholder="예: Jenkins 배포 실패 원인 문서 찾아줘"
-            value={filters.query}
-            onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
-          />
-          <select
-            className="select"
-            value={filters.category}
-            onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}
-          >
-            <option value="all">전체 카테고리</option>
-            {categories
-              .filter((item) => item.name !== "all")
-              .map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
-          <select
-            className="select"
-            value={filters.visibility}
-            onChange={(event) => setFilters((current) => ({ ...current, visibility: event.target.value }))}
-          >
-            <option value="all">전체 범위</option>
-            <option value="public">Public</option>
-            <option value="private">Private</option>
-          </select>
-          <select className="select" value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="latest">최신순</option>
-            <option value="title">제목순</option>
-          </select>
-        </div>
-
-        <div className="inline-row">
-          <button className="button button-primary" onClick={handleSemanticSearch} type="button" disabled={searching}>
-            {searching ? "검색 중..." : "AI 검색"}
-          </button>
-          <button
-            className="button button-ghost"
-            onClick={() => {
-              setSearchAnswer("");
-              setSearchResults([]);
-              setFilters({ query: "", category: "all", visibility: "all" });
-            }}
-            type="button"
-          >
-            검색 초기화
-          </button>
-          <label className="inline-row muted" style={{ marginLeft: 4 }}>
-            <input
-              checked={generateAnswer}
-              onChange={(event) => setGenerateAnswer(event.target.checked)}
-              type="checkbox"
-            />
-            답변 요약도 함께 생성
-          </label>
-        </div>
-
-        {searchMessage ? (
-          <div className={searchMessage.includes("OpenAI") ? "helper warn" : "helper"}>{searchMessage}</div>
-        ) : null}
-      </section>
-
-      <section className="two-col">
-        <aside className="panel sidebar stack">
-          <div>
-            <p className="section-title">Composer</p>
-            <h2 style={{ margin: "10px 0 0" }}>{editingId ? "문서 수정" : "새 문서 등록"}</h2>
-            <p className="muted">문서를 저장하거나 수정하면 서버에서 chunking 후 임베딩을 다시 생성합니다.</p>
-          </div>
-
-          {!session ? (
-            <div className="helper warn">문서를 저장하거나 수정하려면 먼저 로그인해야 합니다.</div>
-          ) : null}
-
-          <form className="composer-card form-grid" onSubmit={handleSaveDocument}>
-            <input
-              className="input"
-              placeholder="문서 제목"
-              value={form.title}
-              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-              required
-            />
-            <input
-              className="input"
-              placeholder="카테고리"
-              value={form.category}
-              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-              required
-            />
-            <input
-              className="input"
-              placeholder="태그 (쉼표로 구분)"
-              value={form.tags}
-              onChange={(event) => setForm((current) => ({ ...current, tags: event.target.value }))}
-            />
-            <input
-              className="input"
-              placeholder="Notion 링크"
-              type="url"
-              value={form.notionUrl}
-              onChange={(event) => setForm((current) => ({ ...current, notionUrl: event.target.value }))}
-            />
-            <select
-              className="select"
-              value={form.visibility}
-              onChange={(event) => setForm((current) => ({ ...current, visibility: event.target.value }))}
-            >
-              <option value="public">Public - 누구나 검색 가능</option>
-              <option value="private">Private - 작성자만 검색 가능</option>
-            </select>
-            <textarea
-              className="textarea"
-              placeholder="업무 문서 내용을 입력해 주세요."
-              value={form.content}
-              onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-              required
-            />
-            <div className="inline-row">
-              <button className="button button-primary" disabled={!session || savingDoc} type="submit">
-                {savingDoc ? "저장 중..." : editingId ? "수정 저장" : "문서 저장"}
-              </button>
-              <button className="button button-secondary" onClick={resetForm} type="button">
-                입력 초기화
-              </button>
-            </div>
-          </form>
-
-          <div>
-            <p className="section-title">Categories</p>
-            <div className="category-list" style={{ marginTop: 12 }}>
-              {categories.map((item) => (
-                <button
-                  key={item.name}
-                  className={`category-button ${filters.category === item.name ? "active" : ""}`}
-                  onClick={() => setFilters((current) => ({ ...current, category: item.name }))}
-                  type="button"
-                >
-                  <span>{item.name === "all" ? "전체" : item.name}</span>
-                  <small>{item.count}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <section className="stack">
-          {searchAnswer ? (
-            <article className="answer-card">
-              <div className="topbar">
-                <div>
-                  <p className="section-title">Generated Answer</p>
-                  <h2 style={{ margin: "10px 0 0" }}>AI 요약 답변</h2>
+            {searchResults.length ? (
+              <article className="section-card">
+                <div className="section-card-header">
+                  <div>
+                    <p className="panel-kicker">Semantic Matches</p>
+                    <h3>AI 검색 결과</h3>
+                  </div>
+                  <span className="count-chip">{searchResults.length} docs</span>
                 </div>
-              </div>
-              <pre className="muted" style={{ marginTop: 16 }}>{searchAnswer}</pre>
-            </article>
-          ) : null}
 
-          {searchResults.length ? (
-            <article className="panel content">
-              <div className="topbar">
-                <div>
-                  <p className="section-title">Semantic Matches</p>
-                  <h2 style={{ margin: "10px 0 0" }}>AI 검색 결과</h2>
-                </div>
-                <span className="chip">{searchResults.length} docs</span>
-              </div>
-
-              <div className="result-list" style={{ marginTop: 16 }}>
-                {searchResults.map((result) => (
-                  <div className="search-result-card" key={result.document_id}>
-                    <div className="topbar">
-                      <div className="inline-row">
+                <div className="search-result-list">
+                  {searchResults.map((result) => (
+                    <article className="search-result-item" key={result.document_id}>
+                      <div className="inline-meta">
                         <span className={`pill ${result.visibility === "private" ? "pill-private" : "pill-public"}`}>
                           {visibilityLabel(result.visibility)}
                         </span>
-                        <span className="chip">{result.category}</span>
-                        <span className="chip">score {Math.round((result.score ?? 0) * 100)}%</span>
+                        <span className="tag-chip">{result.category}</span>
+                        <span className="tag-chip">score {Math.round((result.score ?? 0) * 100)}%</span>
                       </div>
-                    </div>
-                    <h3>{result.title}</h3>
-                    <p className="muted">{result.summary || "요약 없음"}</p>
-                    <pre className="muted" style={{ marginTop: 12 }}>{result.snippet}</pre>
-                  </div>
-                ))}
+                      <h4>{result.title}</h4>
+                      <p>{result.summary || "요약 없음"}</p>
+                      <pre>{result.snippet}</pre>
+                    </article>
+                  ))}
+                </div>
+              </article>
+            ) : null}
+
+            <article className="section-card">
+              <div className="section-card-header">
+                <div>
+                  <p className="panel-kicker">Documents</p>
+                  <h3>접근 가능한 문서 목록</h3>
+                </div>
+                <span className="count-chip">{loadingDocs ? "loading..." : `${visibleDocs.length} visible`}</span>
               </div>
+
+              {loadingDocs ? (
+                <div className="empty-state">문서를 불러오는 중입니다.</div>
+              ) : visibleDocs.length ? (
+                <div className="document-grid">
+                  {visibleDocs.map((doc) => (
+                    <article className="document-card" key={doc.id}>
+                      <div className="inline-meta spread">
+                        <div className="inline-meta">
+                          <span className={`pill ${doc.visibility === "private" ? "pill-private" : "pill-public"}`}>
+                            {visibilityLabel(doc.visibility)}
+                          </span>
+                          <span className="tag-chip">{doc.category}</span>
+                        </div>
+                        <span className="tag-chip">{embeddingStatusLabel(doc.embedding_status)}</span>
+                      </div>
+
+                      <h4>{doc.title}</h4>
+                      <p>{doc.summary || "요약 없음"}</p>
+
+                      <div className="tag-list">
+                        {(doc.tags ?? []).map((tag) => (
+                          <span className="tag-chip" key={tag}>
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="doc-meta-text">
+                        <span>작성자: {doc.owner_email || "unknown"}</span>
+                        <span>수정일: {formatDate(doc.updated_at || doc.created_at)}</span>
+                      </div>
+
+                      <div className="doc-actions">
+                        <button className="secondary-action" onClick={() => beginEdit(doc)} type="button">
+                          수정
+                        </button>
+                        <button className="danger-action" onClick={() => handleDeleteDocument(doc.id)} type="button">
+                          삭제
+                        </button>
+                        {doc.notion_url ? (
+                          <a className="ghost-link" href={doc.notion_url} rel="noreferrer" target="_blank">
+                            Notion
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  조건에 맞는 문서가 없습니다. public 문서를 추가하거나 로그인 후 private 문서를 등록해 보세요.
+                </div>
+              )}
             </article>
-          ) : null}
-
-          <article className="panel content">
-            <div className="topbar">
-              <div>
-                <p className="section-title">Documents</p>
-                <h2 style={{ margin: "10px 0 0" }}>내가 접근 가능한 문서 목록</h2>
-              </div>
-              <span className="chip">{loadingDocs ? "loading..." : `${visibleDocs.length} visible`}</span>
-            </div>
-
-            {loadingDocs ? (
-              <div className="empty">문서를 불러오는 중입니다.</div>
-            ) : visibleDocs.length ? (
-              <div className="doc-grid" style={{ marginTop: 16 }}>
-                {visibleDocs.map((doc) => (
-                  <article className="doc-card" key={doc.id}>
-                    <div className="topbar">
-                      <div className="inline-row">
-                        <span className={`pill ${doc.visibility === "private" ? "pill-private" : "pill-public"}`}>
-                          {visibilityLabel(doc.visibility)}
-                        </span>
-                        <span className="chip">{doc.category}</span>
-                      </div>
-                      <span className="chip">{doc.embedding_status}</span>
-                    </div>
-
-                    <h3>{doc.title}</h3>
-                    <p className="muted">{doc.summary || "요약 없음"}</p>
-
-                    <div className="chip-row">
-                      {(doc.tags ?? []).map((tag) => (
-                        <span className="chip" key={tag}>
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    <p className="muted">
-                      작성자: {doc.owner_email || "unknown"}
-                      <br />
-                      수정일: {formatDate(doc.updated_at || doc.created_at)}
-                    </p>
-
-                    <div className="inline-row">
-                      <button className="button button-secondary" onClick={() => beginEdit(doc)} type="button">
-                        수정
-                      </button>
-                      <button className="button button-danger" onClick={() => handleDeleteDocument(doc.id)} type="button">
-                        삭제
-                      </button>
-                      {doc.notion_url ? (
-                        <a className="button button-ghost" href={doc.notion_url} rel="noreferrer" target="_blank">
-                          Notion
-                        </a>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="empty">조건에 맞는 문서가 없습니다. public 문서를 만들거나 로그인 후 private 문서를 추가해 보세요.</div>
-            )}
-          </article>
-
-          <p className="footer-note">
-            이 버전은 브라우저 localStorage 데모가 아니라, Supabase DB를 기준으로 사용자별 문서와 권한을 다루는 구조입니다.
-            AI 검색은 OpenAI 임베딩을 사용하고, 선택적으로 검색 결과 요약 답변도 생성합니다.
-          </p>
+          </section>
         </section>
-      </section>
+      </div>
     </main>
   );
 }
