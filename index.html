@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkNote AI - 공개/비공개 문서 검색 데모</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'system-ui', 'sans-serif']
+          },
+          boxShadow: {
+            soft: '0 24px 80px rgba(15, 23, 42, 0.16)',
+            glow: '0 0 80px rgba(56, 189, 248, 0.18)'
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body class="min-h-screen bg-slate-950 font-sans text-slate-900 antialiased">
+  <div class="pointer-events-none fixed inset-0 overflow-hidden">
+    <div class="absolute -left-32 top-[-140px] h-96 w-96 rounded-full bg-cyan-400/20 blur-3xl"></div>
+    <div class="absolute right-[-180px] top-28 h-[30rem] w-[30rem] rounded-full bg-emerald-400/10 blur-3xl"></div>
+    <div class="absolute bottom-[-180px] left-1/3 h-[28rem] w-[28rem] rounded-full bg-sky-500/15 blur-3xl"></div>
+  </div>
+
+  <div class="relative min-h-screen">
+    <aside class="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-80 lg:flex-col lg:border-r lg:border-white/10 lg:bg-white/[0.08] lg:px-5 lg:py-6 lg:backdrop-blur-2xl">
+      <div class="flex items-center gap-3 px-2">
+        <div class="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-300 to-emerald-300 text-xl font-black text-slate-950 shadow-glow">W</div>
+        <div>
+          <h1 class="text-lg font-black tracking-tight text-white">WorkNote AI</h1>
+          <p class="text-xs font-medium text-slate-400">공개/비공개 문서 검색 데모</p>
+        </div>
+      </div>
+
+      <button id="newDocBtn" class="mt-7 inline-flex h-12 items-center justify-center rounded-2xl bg-white text-sm font-black text-slate-950 shadow-soft transition hover:-translate-y-0.5 hover:bg-cyan-100">
+        + 문서 등록
+      </button>
+
+      <section class="mt-8 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-slate-400">Demo Auth</p>
+            <p id="authStatus" class="mt-2 text-sm font-semibold leading-6 text-white">로그인하지 않음</p>
+          </div>
+          <span id="authBadge" class="rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-slate-300">guest</span>
+        </div>
+        <div class="mt-4 grid gap-2">
+          <input id="loginNameInput" class="rounded-2xl border border-white/10 bg-white/[0.08] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500" type="text" placeholder="이름 또는 이메일 입력" />
+          <div class="grid grid-cols-2 gap-2">
+            <button id="loginBtn" class="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-200">로그인</button>
+            <button id="logoutBtn" class="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-slate-200 transition hover:bg-white/[0.12]">로그아웃</button>
+          </div>
+        </div>
+        <p class="mt-3 text-xs leading-5 text-slate-400">현재 로그인은 데모용 localStorage 기반입니다. 실제 private 보호는 서버 인증과 DB 권한 제어가 필요합니다.</p>
+      </section>
+
+      <section class="mt-8">
+        <div class="mb-3 flex items-center justify-between px-2">
+          <p class="text-xs font-black uppercase tracking-[0.22em] text-slate-400">Categories</p>
+          <span class="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-slate-300">auto</span>
+        </div>
+        <div id="categoryList" class="grid gap-2"></div>
+      </section>
+
+      <section class="mt-8 rounded-3xl border border-white/10 bg-white/[0.06] p-4">
+        <p class="mb-3 text-xs font-black uppercase tracking-[0.22em] text-slate-400">Try search</p>
+        <div class="grid gap-2">
+          <button class="example-query rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm font-semibold text-slate-300 transition hover:bg-white/[0.12]">Jenkins 배포 실패 문서 찾아줘</button>
+          <button class="example-query rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm font-semibold text-slate-300 transition hover:bg-white/[0.12]">8080 포트 충돌 해결 방법</button>
+          <button class="example-query rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-3 text-left text-sm font-semibold text-slate-300 transition hover:bg-white/[0.12]">QA 요청 상태 규칙</button>
+        </div>
+      </section>
+
+      <div class="mt-auto rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm text-emerald-50">
+        <p class="font-black">Demo Scope</p>
+        <p class="mt-1 leading-6 text-emerald-100/80">Public 문서는 누구나 볼 수 있고, Private 문서는 로그인한 현재 사용자 소유 문서만 보이도록 데모 흐름을 구현했습니다.</p>
+      </div>
+    </aside>
+
+    <main class="lg:pl-80">
+      <div class="mx-auto max-w-7xl px-5 py-5 sm:px-7 lg:px-10 lg:py-8">
+        <header class="mb-6 rounded-3xl border border-white/10 bg-white/[0.08] p-4 backdrop-blur-2xl lg:hidden">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-cyan-300 to-emerald-300 font-black text-slate-950">W</div>
+              <div>
+                <h1 class="font-black text-white">WorkNote AI</h1>
+                <p class="text-xs text-slate-400">공개/비공개 문서 검색 데모</p>
+              </div>
+            </div>
+            <button id="mobileNewDocBtn" class="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-950">등록</button>
+          </div>
+          <div class="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <input id="mobileLoginNameInput" class="rounded-2xl border border-white/10 bg-white/[0.08] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500" type="text" placeholder="이름 또는 이메일 입력" />
+            <button id="mobileLoginBtn" class="rounded-2xl bg-cyan-300 px-4 py-3 text-sm font-black text-slate-950">로그인</button>
+            <button id="mobileLogoutBtn" class="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-slate-200">로그아웃</button>
+          </div>
+          <p id="mobileAuthStatus" class="mt-3 text-sm font-semibold text-slate-300">로그인하지 않음</p>
+        </header>
+
+        <section class="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.92] shadow-soft backdrop-blur-2xl">
+          <div class="relative p-6 sm:p-8 lg:p-10">
+            <div class="absolute right-6 top-6 hidden rounded-full border border-cyan-200 bg-cyan-50 px-4 py-2 text-xs font-black text-cyan-700 sm:block">
+              Local Demo for Public / Private Access
+            </div>
+
+            <div class="max-w-3xl">
+              <p class="mb-4 inline-flex rounded-full bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-cyan-200">Access-aware knowledge search</p>
+              <h2 class="text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
+                “그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서
+              </h2>
+              <p class="mt-5 max-w-2xl text-base font-medium leading-8 text-slate-600 sm:text-lg">
+                Notion에 흩어진 업무 기록, 오류 해결 문서, QA 메모를 카테고리별로 저장하고 자연어로 관련 문서를 찾아보세요.
+              </p>
+            </div>
+
+            <div class="mt-8 grid gap-3 sm:grid-cols-4">
+              <div class="rounded-3xl border border-slate-200 bg-white p-5">
+                <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Visible Docs</p>
+                <p id="docCount" class="mt-3 text-4xl font-black tracking-tight text-slate-950">0</p>
+              </div>
+              <div class="rounded-3xl border border-slate-200 bg-white p-5">
+                <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Public</p>
+                <p id="publicCount" class="mt-3 text-4xl font-black tracking-tight text-slate-950">0</p>
+              </div>
+              <div class="rounded-3xl border border-slate-200 bg-white p-5">
+                <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">My Private</p>
+                <p id="privateCount" class="mt-3 text-4xl font-black tracking-tight text-slate-950">0</p>
+              </div>
+              <div class="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 to-cyan-950 p-5 text-white">
+                <p class="text-xs font-black uppercase tracking-[0.2em] text-cyan-200">Storage</p>
+                <p class="mt-4 text-lg font-black">Local first</p>
+                <p class="mt-1 text-sm font-medium text-slate-300">실서비스 전환 전 권한 UX 데모</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="sticky top-4 z-20 mt-5 rounded-[1.75rem] border border-white/10 bg-white/[0.88] p-4 shadow-soft backdrop-blur-2xl">
+          <div class="grid gap-3 xl:grid-cols-[1fr_520px]">
+            <div class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 focus-within:border-cyan-300 focus-within:ring-4 focus-within:ring-cyan-100">
+              <span class="text-2xl">⌕</span>
+              <input id="searchInput" class="min-w-0 flex-1 bg-transparent text-base font-semibold text-slate-900 outline-none placeholder:text-slate-400" type="text" placeholder="예: Jenkins 배포 실패 원인 문서 찾아줘" />
+              <button id="searchBtn" class="hidden rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-cyan-700 sm:inline-flex">검색</button>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <select id="categoryFilter" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100">
+                <option value="all">전체 카테고리</option>
+              </select>
+              <select id="visibilityFilter" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100">
+                <option value="all">전체 범위</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+              <select id="sortFilter" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100">
+                <option value="relevance">관련도순</option>
+                <option value="latest">최신순</option>
+                <option value="title">제목순</option>
+              </select>
+              <button id="resetBtn" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-100">초기화</button>
+            </div>
+          </div>
+          <button id="mobileSearchBtn" class="mt-3 flex w-full items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white sm:hidden">검색</button>
+        </section>
+
+        <section class="mt-5 rounded-[1.75rem] border border-cyan-200/60 bg-gradient-to-r from-cyan-50 to-emerald-50 p-5">
+          <div class="flex gap-4">
+            <div class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-lg text-cyan-200">i</div>
+            <div>
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-700">Access Summary</p>
+              <p id="aiMessage" class="mt-2 text-sm font-semibold leading-7 text-slate-700 sm:text-base">로그인하지 않으면 public 문서만 보이고, 로그인하면 public 문서와 내 private 문서를 함께 검색할 수 있습니다.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="resultGrid" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></section>
+      </div>
+    </main>
+  </div>
+
+  <div id="docModal" class="fixed inset-0 z-50 hidden place-items-center p-4">
+    <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-md"></div>
+    <div class="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/20 bg-white p-6 shadow-soft sm:p-8">
+      <div class="mb-6 flex items-start justify-between gap-5">
+        <div>
+          <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-700">New Document</p>
+          <h3 class="mt-2 text-3xl font-black tracking-tight text-slate-950">문서 등록</h3>
+          <p class="mt-2 text-sm font-medium text-slate-500">문서 작성은 로그인 사용자 기준으로 저장되고, Public은 누구나 검색 가능하며 Private는 작성자 본인에게만 보이도록 처리됩니다.</p>
+        </div>
+        <button id="closeModalBtn" class="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200 bg-slate-50 text-2xl font-light text-slate-500 transition hover:bg-slate-100">×</button>
+      </div>
+
+      <form id="docForm" class="grid gap-4">
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          제목
+          <input id="titleInput" class="rounded-2xl border border-slate-200 px-4 py-3 font-semibold outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100" type="text" placeholder="예: ArgoCD manifest generate error 정리" required />
+        </label>
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          카테고리
+          <input id="categoryInput" class="rounded-2xl border border-slate-200 px-4 py-3 font-semibold outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100" type="text" placeholder="예: Kubernetes / ArgoCD" required />
+        </label>
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          태그
+          <input id="tagsInput" class="rounded-2xl border border-slate-200 px-4 py-3 font-semibold outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100" type="text" placeholder="예: ArgoCD, Jenkins, 배포" />
+        </label>
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          Notion 링크
+          <input id="urlInput" class="rounded-2xl border border-slate-200 px-4 py-3 font-semibold outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100" type="url" placeholder="https://www.notion.so/..." />
+        </label>
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          공개 범위
+          <select id="visibilityInput" class="rounded-2xl border border-slate-200 px-4 py-3 font-semibold outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100">
+            <option value="public">Public - 로그인 없이 누구나 검색 가능</option>
+            <option value="private">Private - 로그인한 현재 사용자만 검색 가능</option>
+          </select>
+        </label>
+        <label class="grid gap-2 text-sm font-black text-slate-700">
+          문서 내용
+          <textarea id="contentInput" class="min-h-44 resize-y rounded-2xl border border-slate-200 px-4 py-3 font-semibold leading-7 outline-none focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100" placeholder="업무 중 배운 내용, 오류 원인, 해결 방법 등을 적어주세요." required></textarea>
+        </label>
+        <p id="privateHint" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">문서를 저장하려면 먼저 로그인해야 합니다.</p>
+        <button class="mt-2 h-13 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-cyan-700" type="submit">저장하기</button>
+      </form>
+    </div>
+  </div>
+
+  <aside id="detailDrawer" class="fixed inset-y-0 right-0 z-40 hidden w-full overflow-y-auto border-l border-white/20 bg-white p-6 shadow-soft sm:m-4 sm:h-[calc(100vh-2rem)] sm:max-w-xl sm:rounded-[2rem] sm:border sm:p-8">
+    <div class="mb-6 flex items-start justify-between gap-5">
+      <div>
+        <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-700">Document Detail</p>
+        <h3 id="detailTitle" class="mt-2 text-3xl font-black tracking-tight text-slate-950"></h3>
+      </div>
+      <button id="closeDrawerBtn" class="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-slate-50 text-2xl font-light text-slate-500 transition hover:bg-slate-100">×</button>
+    </div>
+    <div id="detailMeta" class="mb-6 flex flex-wrap gap-2"></div>
+    <section class="border-t border-slate-200 py-6">
+      <h4 class="mb-3 text-sm font-black uppercase tracking-[0.18em] text-slate-400">요약</h4>
+      <p id="detailSummary" class="rounded-3xl bg-cyan-50 p-5 text-base font-semibold leading-8 text-slate-700"></p>
+    </section>
+    <section class="border-t border-slate-200 py-6">
+      <h4 class="mb-3 text-sm font-black uppercase tracking-[0.18em] text-slate-400">문서 내용</h4>
+      <p id="detailContent" class="whitespace-pre-line text-base font-medium leading-8 text-slate-700"></p>
+    </section>
+    <a id="detailLink" class="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white no-underline transition hover:-translate-y-0.5 hover:bg-cyan-700" href="#" target="_blank" rel="noreferrer">Notion 문서 열기</a>
+  </aside>
+
+  <script src="./app.js"></script>
+</body>
+</html>
