@@ -651,6 +651,10 @@ pre {
   background: linear-gradient(90deg, #ecfeff, #eef2ff);
 }
 
+.summary-card-loading {
+  border-color: rgba(99, 102, 241, 0.28);
+}
+
 .summary-icon {
   display: grid;
   place-items: center;
@@ -731,6 +735,51 @@ pre {
 
 .answer-card-ui {
   background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
+}
+
+.answer-card-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.answer-card-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s infinite;
+}
+
+.loading-copy {
+  margin: 10px 0 14px;
+  color: #475569;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 50%, #e2e8f0 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-line + .skeleton-line {
+  margin-top: 10px;
+}
+
+.skeleton-line-wide {
+  width: 100%;
+}
+
+.skeleton-line-medium {
+  width: 82%;
+}
+
+.skeleton-line-short {
+  width: 58%;
 }
 
 .count-chip,
@@ -910,6 +959,22 @@ pre {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @media (max-width: 1180px) {

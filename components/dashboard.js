@@ -93,6 +93,20 @@ function getAuthErrorMessage(error) {
   return message || "인증 처리 중 문제가 발생했습니다.";
 }
 
+function LoadingAnswerCard({ title, description }) {
+  return (
+    <article className="answer-card-ui answer-card-loading" aria-live="polite">
+      <p className="panel-kicker">AI Loading</p>
+      <h3>{title}</h3>
+      <p className="loading-copy">{description}</p>
+      <div className="skeleton-line skeleton-line-wide" />
+      <div className="skeleton-line skeleton-line-medium" />
+      <div className="skeleton-line skeleton-line-wide" />
+      <div className="skeleton-line skeleton-line-short" />
+    </article>
+  );
+}
+
 export default function Dashboard() {
   const [supabase, setSupabase] = useState(null);
   const [session, setSession] = useState(null);
@@ -1017,7 +1031,7 @@ export default function Dashboard() {
                 </div>
               </section>
 
-              <section className="summary-card">
+              <section className={`summary-card ${searchingDocs ? "summary-card-loading" : ""}`}>
                 <div className="summary-icon">AI</div>
                 <div>
                   <p className="summary-kicker">AI 추천 요약</p>
@@ -1046,6 +1060,7 @@ export default function Dashboard() {
                     <div className="form-actions">
                       <button className="primary-action" disabled={savingDoc} type="submit">{savingDoc ? "저장 중..." : editingDocId ? "수정 저장" : "저장하기"}</button>
                       <button className="secondary-action" onClick={() => { setEditingDocId(null); setDocumentForm(initialDocumentForm); }} type="button">입력 비우기</button>
+                      {searchingArchives ? <p className="loading-copy">AI가 계정 아카이브를 읽고 답을 찾는 중입니다.</p> : null}
                     </div>
                   </form>
                 </aside>
@@ -1060,7 +1075,12 @@ export default function Dashboard() {
                     </div>
                   </section>
 
-                  {docSearchAnswer ? (
+                  {searchingDocs ? (
+                    <LoadingAnswerCard
+                      title="AI가 요약 답변을 정리하고 있어요"
+                      description="검색 결과를 읽고 핵심만 추려서 답변을 만드는 중입니다."
+                    />
+                  ) : docSearchAnswer ? (
                     <article className="answer-card-ui">
                       <p className="panel-kicker">Generated Answer</p>
                       <h3>AI 요약 답변</h3>
@@ -1201,7 +1221,7 @@ export default function Dashboard() {
                     </div>
                   </section>
 
-                  <section className="summary-card">
+                  <section className={`summary-card ${searchingArchives ? "summary-card-loading" : ""}`}>
                     <div className="summary-icon">AI</div>
                     <div>
                       <p className="summary-kicker">아카이브 검색 요약</p>
@@ -1244,7 +1264,12 @@ export default function Dashboard() {
                         </div>
                       </section>
 
-                      {archiveSearchAnswer ? (
+                      {searchingArchives ? (
+                        <LoadingAnswerCard
+                          title="AI가 아카이브 답변을 정리하고 있어요"
+                          description="로그인 정보, URL, IP 관련 항목을 읽고 답변을 정리하는 중입니다."
+                        />
+                      ) : archiveSearchAnswer ? (
                         <article className="answer-card-ui">
                           <p className="panel-kicker">Generated Answer</p>
                           <h3>아카이브 AI 요약</h3>
