@@ -122,6 +122,10 @@ pre {
   margin-top: 8px;
 }
 
+.gate-actions-compact {
+  margin-top: 0;
+}
+
 .gate-message,
 .gate-subtext {
   margin: 6px 0 0;
@@ -346,6 +350,17 @@ pre {
 .ghost-link,
 .search-reset {
   padding: 13px 18px;
+}
+
+.primary-action:disabled,
+.secondary-action:disabled,
+.danger-action:disabled,
+.ghost-link:disabled,
+.search-reset:disabled,
+.sidebar-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .danger-action {
