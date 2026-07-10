@@ -56,6 +56,25 @@ function approvalLabel(status) {
   }
 }
 
+function getAuthErrorMessage(error) {
+  const message = String(error?.message || "");
+
+  if (message.includes("Email not confirmed")) {
+    return "이메일 인증 전입니다. 메일함에서 인증을 완료해 주세요.";
+  }
+  if (message.includes("Invalid login credentials")) {
+    return "이메일/비밀번호가 일치하지 않습니다.";
+  }
+  if (message.includes("User already registered")) {
+    return "이미 가입된 이메일입니다.";
+  }
+  if (message.includes("Password should be at least")) {
+    return "비밀번호가 너무 짧습니다. 더 길게 입력해 주세요.";
+  }
+
+  return message || "인증 처리 중 문제가 발생했습니다.";
+}
+
 export default function Dashboard() {
   const [supabase, setSupabase] = useState(null);
   const [session, setSession] = useState(null);
@@ -83,9 +102,12 @@ export default function Dashboard() {
   const [generateAnswer, setGenerateAnswer] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [adminActionLoading, setAdminActionLoading] = useState("");
+  const [retryLoading, setRetryLoading] = useState(false);
 
   const isApproved = accessProfile?.approval_status === "approved";
   const isAdmin = isApproved && accessProfile?.role === "admin";
+  const retryCount = accessProfile?.retry_request_count ?? 0;
+  const remainingRetries = Math.max(0, 3 - retryCount);
 
   useEffect(() => {
     setSupabase(createSupabaseBrowserClient());
@@ -112,20 +134,33 @@ export default function Dashboard() {
   useEffect(() => {
     if (isApproved) {
       void loadDocuments();
-    } else {
-      setDocs([]);
-      setSelectedDoc(null);
+      return;
     }
+
+    setDocs([]);
+    setSelectedDoc(null);
   }, [isApproved]);
 
   useEffect(() => {
     function handleEscape(event) {
-      if (event.key === "Escape") setSelectedDoc(null);
+      if (event.key === "Escape") {
+        setSelectedDoc(null);
+      }
     }
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+
+    const timer = window.setInterval(() => {
+      void loadAccessState();
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, [isAdmin]);
 
   async function loadAccessState() {
     setAccessLoading(true);
@@ -136,6 +171,7 @@ export default function Dashboard() {
 
       setAccessProfile(payload.profile ?? null);
       setPendingMembers(payload.pendingMembers ?? []);
+      return payload;
     } finally {
       setAccessLoading(false);
     }
@@ -165,12 +201,12 @@ export default function Dashboard() {
     setAuthMessage("");
     const { error } = await supabase.auth.signUp({ email, password });
 
-    setAuthMessage(
-      error
-        ? error.message
-        : "회원가입 요청을 보냈습니다. 관리자 승인 후 문서 확인과 등록이 가능합니다."
-    );
+    if (error) {
+      setAuthMessage(getAuthErrorMessage(error));
+      return;
+    }
 
+    setAuthMessage("회원가입이 완료되었습니다. 이메일 인증과 관리자 승인이 모두 필요합니다.");
     await loadAccessState();
   }
 
@@ -180,11 +216,25 @@ export default function Dashboard() {
     setAuthMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    setAuthMessage(error ? error.message : "로그인되었습니다.");
-
-    if (!error) {
-      await loadAccessState();
+    if (error) {
+      setAuthMessage(getAuthErrorMessage(error));
+      return;
     }
+
+    const payload = await loadAccessState();
+    const approvalStatus = payload?.profile?.approval_status;
+
+    if (approvalStatus === "pending") {
+      setAuthMessage("관리자 승인이 필요합니다.");
+      return;
+    }
+
+    if (approvalStatus === "rejected") {
+      setAuthMessage("관리자 승인이 거절되었습니다.");
+      return;
+    }
+
+    setAuthMessage("로그인되었습니다.");
   }
 
   async function handleSignOut() {
@@ -196,6 +246,10 @@ export default function Dashboard() {
     setSelectedDoc(null);
     setAuthMessage("로그아웃되었습니다.");
     await loadAccessState();
+  }
+
+  async function handleReturnToLogin() {
+    await handleSignOut();
   }
 
   async function handleApprovalAction(userId, action) {
@@ -221,8 +275,34 @@ export default function Dashboard() {
     }
   }
 
+  async function handleRetryApprovalRequest() {
+    setRetryLoading(true);
+    setAuthMessage("");
+
+    try {
+      const response = await fetch("/api/access", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request_reapproval" }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setAuthMessage(payload.error ?? "승인 재요청에 실패했습니다.");
+        return;
+      }
+
+      setAuthMessage(`관리자 승인 재요청을 보냈습니다. (${payload.retryRequestCount}/3)`);
+      await loadAccessState();
+    } finally {
+      setRetryLoading(false);
+    }
+  }
+
   const categories = useMemo(() => {
     const counts = docs.reduce((acc, doc) => {
+      if (!doc.category) return acc;
       acc[doc.category] = (acc[doc.category] || 0) + 1;
       return acc;
     }, {});
@@ -241,8 +321,10 @@ export default function Dashboard() {
       if (!normalizedQuery) return true;
 
       const haystack = [doc.title, doc.category, doc.content, doc.summary, ...(doc.tags ?? [])]
+        .filter(Boolean)
         .join(" ")
         .toLowerCase();
+
       return haystack.includes(normalizedQuery);
     });
 
@@ -389,7 +471,7 @@ export default function Dashboard() {
       <main className="gate-shell">
         <section className="gate-card">
           <p className="gate-kicker">Team Access</p>
-          <h1>접근 권한을 확인하는 중입니다.</h1>
+          <h1>접속 권한을 확인하는 중입니다.</h1>
           <p>승인 상태와 계정 정보를 불러오고 있습니다.</p>
         </section>
       </main>
@@ -401,19 +483,35 @@ export default function Dashboard() {
       <main className="gate-shell">
         <section className="gate-card">
           <p className="gate-kicker">Team Access</p>
-          <h1>팀 승인형 문서 포털</h1>
-          <p>
-            이 링크는 팀원만 사용할 수 있습니다. 회원가입 후 관리자 승인까지 완료되어야 문서 조회와 문서 등록이 가능합니다.
-          </p>
+          <h1>팀 전용 문서 포털</h1>
+          <p>회원가입 후 이메일 인증과 관리자 승인이 완료되어야 문서 조회와 등록이 가능합니다.</p>
 
           <div className="gate-form">
-            <input className="gate-input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="이메일" type="email" />
-            <input className="gate-input" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="비밀번호" type="password" />
+            <input
+              className="gate-input"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="이메일"
+              type="email"
+            />
+            <input
+              className="gate-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="비밀번호"
+              type="password"
+            />
             <div className="gate-actions">
-              <button className="primary-action" onClick={handleSignIn} type="button">로그인</button>
-              <button className="secondary-action" onClick={handleSignUp} type="button">회원가입</button>
+              <button className="primary-action" onClick={handleSignIn} type="button">
+                로그인
+              </button>
+              <button className="secondary-action" onClick={handleSignUp} type="button">
+                회원가입
+              </button>
             </div>
-            <div className="helper-banner">회원가입 후에는 자동으로 승인 대기 상태가 되며, 관리자가 승인해주면 메인 화면이 열립니다.</div>
+            <div className="helper-banner">
+              이메일 인증 전이면 "이메일 인증 전입니다", 승인 전이면 "관리자 승인이 필요합니다" 안내가 표시됩니다.
+            </div>
             {authMessage ? <p className="gate-message">{authMessage}</p> : null}
           </div>
         </section>
@@ -422,25 +520,46 @@ export default function Dashboard() {
   }
 
   if (!isApproved) {
+    const isRejected = accessProfile?.approval_status === "rejected";
+
     return (
       <main className="gate-shell">
         <section className="gate-card">
           <p className="gate-kicker">Approval Pending</p>
           <h1>{approvalLabel(accessProfile?.approval_status)}</h1>
           <p>
-            현재 계정은 <strong>{session.user.email}</strong> 입니다. 관리자가 승인하면 문서 조회와 문서 등록이 가능해집니다.
+            현재 계정은 <strong>{session.user.email}</strong> 입니다. 관리자 승인이 완료되면 문서 조회와 문서 등록이
+            가능해집니다.
           </p>
-          <div className={`status-pill ${accessProfile?.approval_status === "rejected" ? "rejected" : ""}`}>
+          <div className={`status-pill ${isRejected ? "rejected" : ""}`}>
             {approvalLabel(accessProfile?.approval_status)}
           </div>
           <p className="gate-subtext">
-            {accessProfile?.approval_status === "rejected"
-              ? "승인이 거절된 상태입니다. 필요하면 관리자에게 다시 요청해 주세요."
-              : "이 페이지는 승인 완료 전까지 먼저 보이는 팀 전용 접근 게이트입니다."}
+            {isRejected ? "관리자 승인이 거절되었습니다." : "관리자 승인이 필요합니다."}
           </p>
+          {isRejected ? (
+            <p className="gate-subtext">재요청 가능 횟수: {remainingRetries}회 남음 (최대 3회)</p>
+          ) : null}
           <div className="gate-actions">
-            <button className="secondary-action" onClick={loadAccessState} type="button">상태 새로고침</button>
-            <button className="ghost-link" onClick={handleSignOut} type="button">로그아웃</button>
+            <button className="secondary-action" onClick={loadAccessState} type="button">
+              상태 새로고침
+            </button>
+            {isRejected ? (
+              <button
+                className="primary-action"
+                disabled={retryLoading || remainingRetries <= 0}
+                onClick={handleRetryApprovalRequest}
+                type="button"
+              >
+                {retryLoading ? "재요청 중..." : remainingRetries > 0 ? "관리자 승인 재요청" : "재요청 횟수 소진"}
+              </button>
+            ) : null}
+            <button className="secondary-action" onClick={handleReturnToLogin} type="button">
+              로그인 페이지로
+            </button>
+            <button className="ghost-link" onClick={handleSignOut} type="button">
+              로그아웃
+            </button>
           </div>
           {authMessage ? <p className="gate-message">{authMessage}</p> : null}
         </section>
@@ -474,9 +593,11 @@ export default function Dashboard() {
             <div className="stack">
               <p className="sidebar-note">{session.user.email} 계정으로 승인 완료되었습니다.</p>
               <p className="sidebar-note">
-                권한: {isAdmin ? "관리자" : "일반 팀원"} / 상태: {approvalLabel(accessProfile?.approval_status)}
+                권한: {isAdmin ? "관리자" : "일반 사용자"} / 상태: {approvalLabel(accessProfile?.approval_status)}
               </p>
-              <button className="sidebar-button sidebar-button-ghost" onClick={handleSignOut} type="button">로그아웃</button>
+              <button className="sidebar-button sidebar-button-ghost" onClick={handleSignOut} type="button">
+                로그아웃
+              </button>
               {authMessage ? <p className="sidebar-help">{authMessage}</p> : null}
             </div>
           </section>
@@ -533,9 +654,14 @@ export default function Dashboard() {
               <div className="admin-panel-header">
                 <div>
                   <p className="panel-kicker">Admin Approval</p>
-                  <h3>팀원 승인 대기 목록</h3>
+                  <h3>사용자 승인 대기 목록</h3>
                 </div>
-                <span className="count-chip">{pendingMembers.length} pending</span>
+                <div className="inline-meta">
+                  <button className="secondary-action" onClick={loadAccessState} type="button">
+                    목록 새로고침
+                  </button>
+                  <span className="count-chip">{pendingMembers.length} pending</span>
+                </div>
               </div>
 
               {pendingMembers.length ? (
@@ -545,6 +671,8 @@ export default function Dashboard() {
                       <div>
                         <h4>{member.email}</h4>
                         <p>가입일: {formatDate(member.created_at)}</p>
+                        <p>재요청 횟수: {member.retry_request_count ?? 0}/3</p>
+                        <p>마지막 요청: {formatDate(member.last_requested_at || member.updated_at || member.created_at)}</p>
                       </div>
                       <div className="approval-actions">
                         <button
@@ -568,7 +696,7 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                <div className="empty-state compact">현재 승인 대기 중인 팀원이 없습니다.</div>
+                <div className="empty-state compact">현재 승인 대기 중인 사용자가 없습니다.</div>
               )}
             </section>
           ) : null}
@@ -576,9 +704,10 @@ export default function Dashboard() {
           <section className="hero-card">
             <div className="hero-floating-badge">Notion-ready Knowledge Assistant</div>
             <p className="hero-kicker">AI document search</p>
-            <h2 className="hero-heading">“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h2>
+            <h2 className="hero-heading">흩어진 회의록과 장애 대응 문서를 빠르게 찾는 AI 문서 검색 서비스</h2>
             <p className="hero-description">
-              이 사이트는 관리자 승인을 받은 팀원만 접근할 수 있습니다. 그 안에서 public 문서는 팀원 전체가, private 문서는 작성자 본인만 볼 수 있습니다.
+              이 사이트는 관리자 승인을 받은 팀원만 접근할 수 있습니다. 그 안에서 public 문서는 팀원 전체가,
+              private 문서는 작성자 본인만 볼 수 있습니다.
             </p>
 
             <div className="hero-stats">
@@ -607,20 +736,32 @@ export default function Dashboard() {
                 <span className="search-icon">⌕</span>
                 <input
                   className="search-input"
-                  placeholder="예: Jenkins에서 브랜치 배포 안 될 때 확인할 문서 찾아줘"
+                  placeholder="예: Jenkins에서 브랜치 배포 전 확인할 문서 찾아줘"
                   value={filters.query}
                   onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
                 />
               </div>
 
               <div className="search-controls">
-                <select className="search-select" value={filters.category} onChange={(e) => setFilters((current) => ({ ...current, category: e.target.value }))}>
+                <select
+                  className="search-select"
+                  value={filters.category}
+                  onChange={(e) => setFilters((current) => ({ ...current, category: e.target.value }))}
+                >
                   <option value="all">전체 카테고리</option>
-                  {categories.filter((item) => item.name !== "all").map((item) => (
-                    <option key={item.name} value={item.name}>{item.name}</option>
-                  ))}
+                  {categories
+                    .filter((item) => item.name !== "all")
+                    .map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name}
+                      </option>
+                    ))}
                 </select>
-                <select className="search-select" value={filters.visibility} onChange={(e) => setFilters((current) => ({ ...current, visibility: e.target.value }))}>
+                <select
+                  className="search-select"
+                  value={filters.visibility}
+                  onChange={(e) => setFilters((current) => ({ ...current, visibility: e.target.value }))}
+                >
                   <option value="all">전체 범위</option>
                   <option value="public">Public</option>
                   <option value="private">Private</option>
@@ -629,7 +770,9 @@ export default function Dashboard() {
                   <option value="latest">최신순</option>
                   <option value="title">제목순</option>
                 </select>
-                <button className="search-reset" onClick={resetForm} type="button">작성 초기화</button>
+                <button className="search-reset" onClick={resetForm} type="button">
+                  작성 초기화
+                </button>
               </div>
             </div>
 
@@ -656,11 +799,11 @@ export default function Dashboard() {
           </section>
 
           <section className="summary-card">
-            <div className="summary-icon">✦</div>
+            <div className="summary-icon">AI</div>
             <div>
               <p className="summary-kicker">AI 추천 요약</p>
               <p className="summary-text">
-                {searchMessage || "검색어를 입력하면 의미 기반으로 관련 문서를 찾고, 원하면 답변 요약도 함께 생성합니다."}
+                {searchMessage || "검색어를 입력하면 의미 기반으로 관련 문서를 찾고, 원하면 답변 요약까지 함께 생성합니다."}
               </p>
             </div>
           </section>
@@ -670,24 +813,59 @@ export default function Dashboard() {
               <div className="panel-heading">
                 <p className="panel-kicker">New Document</p>
                 <h3>{editingId ? "문서 수정" : "문서 등록"}</h3>
-                <p>승인된 팀원만 문서를 등록하거나 수정할 수 있습니다.</p>
+                <p>승인된 사용자만 문서를 등록하거나 수정할 수 있습니다.</p>
               </div>
 
               <form className="form-card" onSubmit={handleSaveDocument}>
-                <input className="form-input" placeholder="제목" value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} required />
-                <input className="form-input" placeholder="카테고리" value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} required />
-                <input className="form-input" placeholder="태그 (쉼표로 구분)" value={form.tags} onChange={(e) => setForm((current) => ({ ...current, tags: e.target.value }))} />
-                <input className="form-input" placeholder="Notion 링크" type="url" value={form.notionUrl} onChange={(e) => setForm((current) => ({ ...current, notionUrl: e.target.value }))} />
-                <select className="form-input" value={form.visibility} onChange={(e) => setForm((current) => ({ ...current, visibility: e.target.value }))}>
+                <input
+                  className="form-input"
+                  placeholder="제목"
+                  value={form.title}
+                  onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))}
+                  required
+                />
+                <input
+                  className="form-input"
+                  placeholder="카테고리"
+                  value={form.category}
+                  onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))}
+                  required
+                />
+                <input
+                  className="form-input"
+                  placeholder="태그 (쉼표로 구분)"
+                  value={form.tags}
+                  onChange={(e) => setForm((current) => ({ ...current, tags: e.target.value }))}
+                />
+                <input
+                  className="form-input"
+                  placeholder="Notion 링크"
+                  type="url"
+                  value={form.notionUrl}
+                  onChange={(e) => setForm((current) => ({ ...current, notionUrl: e.target.value }))}
+                />
+                <select
+                  className="form-input"
+                  value={form.visibility}
+                  onChange={(e) => setForm((current) => ({ ...current, visibility: e.target.value }))}
+                >
                   <option value="public">Public - 팀원 모두 검색 가능</option>
                   <option value="private">Private - 작성자만 검색 가능</option>
                 </select>
-                <textarea className="form-textarea" placeholder="문서 내용을 적어주세요." value={form.content} onChange={(e) => setForm((current) => ({ ...current, content: e.target.value }))} required />
+                <textarea
+                  className="form-textarea"
+                  placeholder="문서 내용을 적어 주세요."
+                  value={form.content}
+                  onChange={(e) => setForm((current) => ({ ...current, content: e.target.value }))}
+                  required
+                />
                 <div className="form-actions">
                   <button className="primary-action" disabled={savingDoc} type="submit">
                     {savingDoc ? "저장 중..." : editingId ? "수정 저장" : "저장하기"}
                   </button>
-                  <button className="secondary-action" onClick={resetForm} type="button">입력 비우기</button>
+                  <button className="secondary-action" onClick={resetForm} type="button">
+                    입력 비우기
+                  </button>
                 </div>
               </form>
             </aside>
@@ -715,7 +893,9 @@ export default function Dashboard() {
                     {searchResults.map((result) => (
                       <article className="search-result-item" key={result.document_id}>
                         <div className="inline-meta">
-                          <span className={`pill ${result.visibility === "private" ? "pill-private" : "pill-public"}`}>{visibilityLabel(result.visibility)}</span>
+                          <span className={`pill ${result.visibility === "private" ? "pill-private" : "pill-public"}`}>
+                            {visibilityLabel(result.visibility)}
+                          </span>
                           <span className="tag-chip">{result.category}</span>
                           <span className="tag-chip">score {Math.round((result.score ?? 0) * 100)}%</span>
                         </div>
@@ -745,7 +925,9 @@ export default function Dashboard() {
                       <article className="document-card" key={doc.id}>
                         <div className="inline-meta spread">
                           <div className="inline-meta">
-                            <span className={`pill ${doc.visibility === "private" ? "pill-private" : "pill-public"}`}>{visibilityLabel(doc.visibility)}</span>
+                            <span className={`pill ${doc.visibility === "private" ? "pill-private" : "pill-public"}`}>
+                              {visibilityLabel(doc.visibility)}
+                            </span>
                             <span className="tag-chip">{doc.category}</span>
                           </div>
                           <span className="tag-chip">{embeddingStatusLabel(doc.embedding_status)}</span>
@@ -756,7 +938,9 @@ export default function Dashboard() {
 
                         <div className="tag-list">
                           {(doc.tags ?? []).map((tag) => (
-                            <span className="tag-chip" key={tag}>#{tag}</span>
+                            <span className="tag-chip" key={tag}>
+                              #{tag}
+                            </span>
                           ))}
                         </div>
 
@@ -766,15 +950,21 @@ export default function Dashboard() {
                         </div>
 
                         <div className="doc-actions">
-                          <button className="primary-action" onClick={() => setSelectedDoc(doc)} type="button">상세 보기</button>
-                          <button className="secondary-action" onClick={() => beginEdit(doc)} type="button">수정</button>
-                          <button className="danger-action" onClick={() => handleDeleteDocument(doc.id)} type="button">삭제</button>
+                          <button className="primary-action" onClick={() => setSelectedDoc(doc)} type="button">
+                            자세히 보기
+                          </button>
+                          <button className="secondary-action" onClick={() => beginEdit(doc)} type="button">
+                            수정
+                          </button>
+                          <button className="danger-action" onClick={() => handleDeleteDocument(doc.id)} type="button">
+                            삭제
+                          </button>
                         </div>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <div className="empty-state">조건에 맞는 문서가 없습니다. 팀 문서를 등록해 보세요.</div>
+                  <div className="empty-state">조건에 맞는 문서가 없습니다. 새 문서를 등록해 보세요.</div>
                 )}
               </article>
             </section>
@@ -790,15 +980,21 @@ export default function Dashboard() {
                 <p className="panel-kicker">Document Detail</p>
                 <h3>{selectedDoc.title}</h3>
               </div>
-              <button className="detail-close" onClick={() => setSelectedDoc(null)} type="button">×</button>
+              <button className="detail-close" onClick={() => setSelectedDoc(null)} type="button">
+                ×
+              </button>
             </div>
 
             <div className="detail-meta">
-              <span className={`pill ${selectedDoc.visibility === "private" ? "pill-private" : "pill-public"}`}>{visibilityLabel(selectedDoc.visibility)}</span>
+              <span className={`pill ${selectedDoc.visibility === "private" ? "pill-private" : "pill-public"}`}>
+                {visibilityLabel(selectedDoc.visibility)}
+              </span>
               <span className="tag-chip">{selectedDoc.category}</span>
               <span className="tag-chip">{embeddingStatusLabel(selectedDoc.embedding_status)}</span>
               {(selectedDoc.tags ?? []).map((tag) => (
-                <span className="tag-chip" key={tag}>#{tag}</span>
+                <span className="tag-chip" key={tag}>
+                  #{tag}
+                </span>
               ))}
             </div>
 
@@ -824,7 +1020,9 @@ export default function Dashboard() {
                   Notion 바로가기
                 </a>
               ) : null}
-              <button className="secondary-action" onClick={() => setSelectedDoc(null)} type="button">닫기</button>
+              <button className="secondary-action" onClick={() => setSelectedDoc(null)} type="button">
+                닫기
+              </button>
             </div>
           </aside>
         </div>

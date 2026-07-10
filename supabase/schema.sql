@@ -15,11 +15,16 @@ create table if not exists public.app_users (
   email text,
   role text not null default 'member' check (role in ('member', 'admin')),
   approval_status text not null default 'pending' check (approval_status in ('pending', 'approved', 'rejected')),
+  retry_request_count integer not null default 0,
+  last_requested_at timestamptz,
   approved_by uuid references auth.users(id) on delete set null,
   approved_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.app_users add column if not exists retry_request_count integer not null default 0;
+alter table public.app_users add column if not exists last_requested_at timestamptz;
 
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
@@ -118,6 +123,60 @@ as $$
     where user_id = check_user_id
       and approval_status = 'approved'
   );
+$$;
+
+create or replace function public.request_approval_retry()
+returns table (
+  ok boolean,
+  error_message text,
+  retry_request_count integer,
+  approval_status text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_profile public.app_users%rowtype;
+begin
+  if auth.uid() is null then
+    return query select false, '로그인 후 이용할 수 있습니다.', 0, 'pending'::text;
+    return;
+  end if;
+
+  select *
+  into current_profile
+  from public.app_users
+  where user_id = auth.uid();
+
+  if not found then
+    return query select false, '사용자 정보를 찾을 수 없습니다.', 0, 'pending'::text;
+    return;
+  end if;
+
+  if current_profile.approval_status <> 'rejected' then
+    return query
+    select false, '거절된 계정만 재요청할 수 있습니다.', current_profile.retry_request_count, current_profile.approval_status;
+    return;
+  end if;
+
+  if current_profile.retry_request_count >= 3 then
+    return query
+    select false, '재요청은 최대 3번까지 가능합니다.', current_profile.retry_request_count, current_profile.approval_status;
+    return;
+  end if;
+
+  update public.app_users
+  set approval_status = 'pending',
+      retry_request_count = current_profile.retry_request_count + 1,
+      last_requested_at = now(),
+      approved_by = null,
+      approved_at = null
+  where user_id = auth.uid();
+
+  return query
+  select true, null::text, current_profile.retry_request_count + 1, 'pending'::text;
+end;
 $$;
 
 drop trigger if exists app_users_set_updated_at on public.app_users;
