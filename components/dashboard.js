@@ -42,6 +42,7 @@ function visibilityLabel(visibility) {
 
 function formatDate(value) {
   if (!value) return "-";
+
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -113,20 +114,23 @@ export default function Dashboard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+
   const [accessLoading, setAccessLoading] = useState(true);
   const [accessProfile, setAccessProfile] = useState(null);
   const [pendingMembers, setPendingMembers] = useState([]);
   const [pendingArchiveMembers, setPendingArchiveMembers] = useState([]);
+
   const [activeView, setActiveView] = useState("documents");
+  const [selectedDoc, setSelectedDoc] = useState(null);
 
   const [docs, setDocs] = useState([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
   const [docFilters, setDocFilters] = useState({
     query: "",
     category: "all",
     visibility: "all",
   });
   const [docSort, setDocSort] = useState("latest");
-  const [loadingDocs, setLoadingDocs] = useState(false);
   const [documentForm, setDocumentForm] = useState(initialDocumentForm);
   const [editingDocId, setEditingDocId] = useState(null);
   const [savingDoc, setSavingDoc] = useState(false);
@@ -135,15 +139,14 @@ export default function Dashboard() {
   const [docSearchResults, setDocSearchResults] = useState([]);
   const [docSearchMessage, setDocSearchMessage] = useState("");
   const [generateDocAnswer, setGenerateDocAnswer] = useState(true);
-  const [selectedDoc, setSelectedDoc] = useState(null);
   const [shareLoading, setShareLoading] = useState(false);
 
   const [archives, setArchives] = useState([]);
+  const [loadingArchives, setLoadingArchives] = useState(false);
   const [archiveFilters, setArchiveFilters] = useState({
     query: "",
     category: "all",
   });
-  const [loadingArchives, setLoadingArchives] = useState(false);
   const [archiveForm, setArchiveForm] = useState(initialArchiveForm);
   const [editingArchiveId, setEditingArchiveId] = useState(null);
   const [savingArchive, setSavingArchive] = useState(false);
@@ -200,6 +203,16 @@ export default function Dashboard() {
   }, [isApproved, isArchiveApproved]);
 
   useEffect(() => {
+    if (!isAdmin) return undefined;
+
+    const timer = window.setInterval(() => {
+      void loadAccessState({ silent: true });
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, [isAdmin]);
+
+  useEffect(() => {
     function handleEscape(event) {
       if (event.key === "Escape") {
         setSelectedDoc(null);
@@ -209,16 +222,6 @@ export default function Dashboard() {
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
-
-  useEffect(() => {
-    if (!isAdmin) return undefined;
-
-    const timer = window.setInterval(() => {
-      void loadAccessState({ silent: true });
-    }, 10000);
-
-    return () => window.clearInterval(timer);
-  }, [isAdmin]);
 
   async function loadAccessState(options = {}) {
     if (!options.silent) {
@@ -391,7 +394,7 @@ export default function Dashboard() {
         return;
       }
 
-      await loadAccessState();
+      await loadAccessState({ silent: true });
     } finally {
       setAdminActionLoading("");
     }
@@ -492,7 +495,9 @@ export default function Dashboard() {
       return;
     }
 
-    if (selectedDoc?.id === id) setSelectedDoc(null);
+    if (selectedDoc?.id === id) {
+      setSelectedDoc(null);
+    }
     await loadDocuments();
     if (editingDocId === id) {
       setEditingDocId(null);
@@ -631,6 +636,35 @@ export default function Dashboard() {
     }
   }
 
+  function beginEditDoc(doc) {
+    setEditingDocId(doc.id);
+    setDocumentForm({
+      title: doc.title,
+      category: doc.category,
+      tags: (doc.tags ?? []).join(", "),
+      notionUrl: doc.notion_url ?? "",
+      visibility: doc.visibility,
+      content: doc.content,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function beginEditArchive(item) {
+    setEditingArchiveId(item.id);
+    setArchiveForm({
+      title: item.title,
+      category: item.category,
+      serviceName: item.service_name ?? "",
+      loginId: item.login_id ?? "",
+      url: item.url ?? "",
+      ipAddress: item.ip_address ?? "",
+      passwordNote: item.password_note ?? "",
+      tags: (item.tags ?? []).join(", "),
+      notes: item.notes ?? "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   const documentCategories = useMemo(() => {
     const counts = docs.reduce((acc, doc) => {
       acc[doc.category] = (acc[doc.category] || 0) + 1;
@@ -709,35 +743,6 @@ export default function Dashboard() {
     };
   }, [docs]);
 
-  function beginEditDoc(doc) {
-    setEditingDocId(doc.id);
-    setDocumentForm({
-      title: doc.title,
-      category: doc.category,
-      tags: (doc.tags ?? []).join(", "),
-      notionUrl: doc.notion_url ?? "",
-      visibility: doc.visibility,
-      content: doc.content,
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function beginEditArchive(item) {
-    setEditingArchiveId(item.id);
-    setArchiveForm({
-      title: item.title,
-      category: item.category,
-      serviceName: item.service_name ?? "",
-      loginId: item.login_id ?? "",
-      url: item.url ?? "",
-      ipAddress: item.ip_address ?? "",
-      passwordNote: item.password_note ?? "",
-      tags: (item.tags ?? []).join(", "),
-      notes: item.notes ?? "",
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   if (accessLoading) {
     return (
       <main className="gate-shell">
@@ -756,12 +761,8 @@ export default function Dashboard() {
         <section className="gate-card">
           <p className="gate-kicker">Geoeojeong Service</p>
           <h1>“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h1>
-          <p>
-            그어정 서비스는 Notion에 흩어진 업무 기록, 오류 해결 문서, 메모를 한곳에 모아 찾기 쉽게 도와줍니다.
-          </p>
-          <p className="gate-subtext">
-            public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다.
-          </p>
+          <p>그어정 서비스는 Notion에 흩어진 업무 기록, 오류 해결 문서, 메모를 한곳에 모아 찾기 쉽게 도와줍니다.</p>
+          <p className="gate-subtext">public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다.</p>
 
           <div className="gate-form">
             <input className="gate-input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="이메일" type="email" />
@@ -791,7 +792,7 @@ export default function Dashboard() {
           <p className="gate-subtext">{isRejected ? "관리자 승인이 거절되었습니다." : "관리자 승인이 필요합니다."}</p>
           {isRejected ? <p className="gate-subtext">재요청 가능 횟수: {remainingRetries}회 남음 (최대 3회)</p> : null}
           <div className="gate-actions">
-            <button className="secondary-action" onClick={loadAccessState} type="button">상태 새로고침</button>
+            <button className="secondary-action" onClick={() => loadAccessState()} type="button">상태 새로고침</button>
             {isRejected ? (
               <button className="primary-action" disabled={retryLoading || remainingRetries <= 0} onClick={handleRetryApprovalRequest} type="button">
                 {retryLoading ? "재요청 중..." : remainingRetries > 0 ? "관리자 승인 재요청" : "재요청 횟수 소진"}
@@ -816,7 +817,6 @@ export default function Dashboard() {
               <p className="brand-subtitle">그어정 서비스</p>
             </div>
           </div>
-        </section>
 
           <section className="sidebar-section sidebar-auth">
             <div className="sidebar-header-row">
@@ -826,7 +826,6 @@ export default function Dashboard() {
               </div>
               <span className={`sidebar-badge ${session ? "sidebar-badge-active" : ""}`}>{isAdmin ? "admin" : "member"}</span>
             </div>
-
             <div className="stack">
               <p className="sidebar-note">{session.user.email}</p>
               <p className="sidebar-note">일반 승인: {approvalLabel(accessProfile?.approval_status)}</p>
@@ -844,18 +843,10 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="stack">
-              <button
-                className={activeView === "documents" ? "primary-action" : "secondary-action"}
-                onClick={() => setActiveView("documents")}
-                type="button"
-              >
+              <button className={activeView === "documents" ? "primary-action" : "secondary-action"} onClick={() => setActiveView("documents")} type="button">
                 문서 검색
               </button>
-              <button
-                className={activeView === "archives" ? "primary-action" : "secondary-action"}
-                onClick={() => setActiveView("archives")}
-                type="button"
-              >
+              <button className={activeView === "archives" ? "primary-action" : "secondary-action"} onClick={() => setActiveView("archives")} type="button">
                 계정 아카이브
               </button>
             </div>
@@ -883,7 +874,6 @@ export default function Dashboard() {
                   </div>
                   <span className="count-chip">{pendingMembers.length} pending</span>
                 </div>
-
                 {pendingMembers.length ? (
                   <div className="approval-list">
                     {pendingMembers.map((member) => (
@@ -894,22 +884,8 @@ export default function Dashboard() {
                           <p>재요청 횟수: {member.retry_request_count ?? 0}/3</p>
                         </div>
                         <div className="approval-actions">
-                          <button
-                            className="primary-action"
-                            disabled={adminActionLoading === `approve:${member.user_id}`}
-                            onClick={() => handleApprovalAction(member.user_id, "approve")}
-                            type="button"
-                          >
-                            승인
-                          </button>
-                          <button
-                            className="danger-action"
-                            disabled={adminActionLoading === `reject:${member.user_id}`}
-                            onClick={() => handleApprovalAction(member.user_id, "reject")}
-                            type="button"
-                          >
-                            거절
-                          </button>
+                          <button className="primary-action" disabled={adminActionLoading === `approve:${member.user_id}`} onClick={() => handleApprovalAction(member.user_id, "approve")} type="button">승인</button>
+                          <button className="danger-action" disabled={adminActionLoading === `reject:${member.user_id}`} onClick={() => handleApprovalAction(member.user_id, "reject")} type="button">거절</button>
                         </div>
                       </article>
                     ))}
@@ -927,7 +903,6 @@ export default function Dashboard() {
                   </div>
                   <span className="count-chip">{pendingArchiveMembers.length} pending</span>
                 </div>
-
                 {pendingArchiveMembers.length ? (
                   <div className="approval-list">
                     {pendingArchiveMembers.map((member) => (
@@ -938,22 +913,8 @@ export default function Dashboard() {
                           <p>아카이브 요청 시각: {formatDate(member.archive_requested_at || member.updated_at)}</p>
                         </div>
                         <div className="approval-actions">
-                          <button
-                            className="primary-action"
-                            disabled={adminActionLoading === `approve_archive:${member.user_id}`}
-                            onClick={() => handleApprovalAction(member.user_id, "approve_archive")}
-                            type="button"
-                          >
-                            아카이브 승인
-                          </button>
-                          <button
-                            className="danger-action"
-                            disabled={adminActionLoading === `reject_archive:${member.user_id}`}
-                            onClick={() => handleApprovalAction(member.user_id, "reject_archive")}
-                            type="button"
-                          >
-                            아카이브 거절
-                          </button>
+                          <button className="primary-action" disabled={adminActionLoading === `approve_archive:${member.user_id}`} onClick={() => handleApprovalAction(member.user_id, "approve_archive")} type="button">아카이브 승인</button>
+                          <button className="danger-action" disabled={adminActionLoading === `reject_archive:${member.user_id}`} onClick={() => handleApprovalAction(member.user_id, "reject_archive")} type="button">아카이브 거절</button>
                         </div>
                       </article>
                     ))}
@@ -975,7 +936,6 @@ export default function Dashboard() {
                   public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다. Notion에
                   흩어진 업무 기록, 오류 해결 문서, 메모를 카테고리별로 저장하고 관련 문서를 찾아보세요.
                 </p>
-
                 <div className="hero-stats">
                   <div className="hero-stat-card"><p className="hero-stat-label">Visible Docs</p><strong>{stats.total}</strong></div>
                   <div className="hero-stat-card"><p className="hero-stat-label">Public</p><strong>{stats.publicDocs}</strong></div>
@@ -988,22 +948,14 @@ export default function Dashboard() {
                 <div className="search-grid">
                   <div className="search-input-wrap">
                     <span className="search-icon">⌕</span>
-                    <input
-                      className="search-input"
-                      placeholder="예: Jenkins에서 배포 전에 확인할 문서 찾아줘"
-                      value={docFilters.query}
-                      onChange={(event) => setDocFilters((current) => ({ ...current, query: event.target.value }))}
-                    />
+                    <input className="search-input" placeholder="예: Jenkins에서 배포 전에 확인할 문서 찾아줘" value={docFilters.query} onChange={(event) => setDocFilters((current) => ({ ...current, query: event.target.value }))} />
                   </div>
-
                   <div className="search-controls">
-                    <select className="search-select" value={docFilters.category} onChange={(e) => setDocFilters((c) => ({ ...c, category: e.target.value }))}>
+                    <select className="search-select" value={docFilters.category} onChange={(e) => setDocFilters((current) => ({ ...current, category: e.target.value }))}>
                       <option value="all">전체 카테고리</option>
-                      {documentCategories.filter((item) => item.name !== "all").map((item) => (
-                        <option key={item.name} value={item.name}>{item.name}</option>
-                      ))}
+                      {documentCategories.filter((item) => item.name !== "all").map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
                     </select>
-                    <select className="search-select" value={docFilters.visibility} onChange={(e) => setDocFilters((c) => ({ ...c, visibility: e.target.value }))}>
+                    <select className="search-select" value={docFilters.visibility} onChange={(e) => setDocFilters((current) => ({ ...current, visibility: e.target.value }))}>
                       <option value="all">전체 범위</option>
                       <option value="public">Public</option>
                       <option value="private">Private</option>
@@ -1012,19 +964,12 @@ export default function Dashboard() {
                       <option value="latest">최신순</option>
                       <option value="title">제목순</option>
                     </select>
-                    <button className="search-reset" onClick={() => { setEditingDocId(null); setDocumentForm(initialDocumentForm); }} type="button">
-                      작성 초기화
-                    </button>
+                    <button className="search-reset" onClick={() => { setEditingDocId(null); setDocumentForm(initialDocumentForm); }} type="button">작성 초기화</button>
                   </div>
                 </div>
-
                 <div className="search-actions">
-                  <button className="primary-action" onClick={handleSemanticSearch} type="button" disabled={searchingDocs}>
-                    {searchingDocs ? "검색 중..." : "AI 검색"}
-                  </button>
-                  <button className="secondary-action" onClick={() => { setDocSearchAnswer(""); setDocSearchResults([]); setDocFilters({ query: "", category: "all", visibility: "all" }); }} type="button">
-                    검색 초기화
-                  </button>
+                  <button className="primary-action" onClick={handleSemanticSearch} type="button" disabled={searchingDocs}>{searchingDocs ? "검색 중..." : "AI 검색"}</button>
+                  <button className="secondary-action" onClick={() => { setDocSearchAnswer(""); setDocSearchResults([]); setDocFilters({ query: "", category: "all", visibility: "all" }); }} type="button">검색 초기화</button>
                   <label className="toggle-row">
                     <input checked={generateDocAnswer} onChange={(e) => setGenerateDocAnswer(e.target.checked)} type="checkbox" />
                     <span>답변 요약 함께 생성</span>
@@ -1036,7 +981,11 @@ export default function Dashboard() {
                 <div className="summary-icon">AI</div>
                 <div>
                   <p className="summary-kicker">AI 추천 요약</p>
-                  <p className="summary-text">{docSearchMessage || "검색어를 입력하면 의미 기반으로 관련 문서를 찾고, 원하면 답변 요약까지 함께 생성합니다."}</p>
+                  <p className="summary-text">
+                    {searchingDocs
+                      ? "AI가 관련 문서를 읽고 요약을 만드는 중입니다. 잠시만 기다려 주세요."
+                      : docSearchMessage || "검색어를 입력하면 의미 기반으로 관련 문서를 찾고, 원하면 답변 요약까지 함께 생성합니다."}
+                  </p>
                 </div>
               </section>
 
@@ -1047,21 +996,19 @@ export default function Dashboard() {
                     <h3>{editingDocId ? "문서 수정" : "문서 등록"}</h3>
                     <p>승인된 사용자만 문서를 등록하거나 수정할 수 있습니다.</p>
                   </div>
-
                   <form className="form-card" onSubmit={handleSaveDocument}>
-                    <input className="form-input" placeholder="제목" value={documentForm.title} onChange={(e) => setDocumentForm((c) => ({ ...c, title: e.target.value }))} required />
-                    <input className="form-input" placeholder="카테고리" value={documentForm.category} onChange={(e) => setDocumentForm((c) => ({ ...c, category: e.target.value }))} required />
-                    <input className="form-input" placeholder="태그 (쉼표로 구분)" value={documentForm.tags} onChange={(e) => setDocumentForm((c) => ({ ...c, tags: e.target.value }))} />
-                    <input className="form-input" placeholder="Notion 링크" type="url" value={documentForm.notionUrl} onChange={(e) => setDocumentForm((c) => ({ ...c, notionUrl: e.target.value }))} />
-                    <select className="form-input" value={documentForm.visibility} onChange={(e) => setDocumentForm((c) => ({ ...c, visibility: e.target.value }))}>
+                    <input className="form-input" placeholder="제목" value={documentForm.title} onChange={(e) => setDocumentForm((current) => ({ ...current, title: e.target.value }))} required />
+                    <input className="form-input" placeholder="카테고리" value={documentForm.category} onChange={(e) => setDocumentForm((current) => ({ ...current, category: e.target.value }))} required />
+                    <input className="form-input" placeholder="태그 (쉼표로 구분)" value={documentForm.tags} onChange={(e) => setDocumentForm((current) => ({ ...current, tags: e.target.value }))} />
+                    <input className="form-input" placeholder="Notion 링크" type="url" value={documentForm.notionUrl} onChange={(e) => setDocumentForm((current) => ({ ...current, notionUrl: e.target.value }))} />
+                    <select className="form-input" value={documentForm.visibility} onChange={(e) => setDocumentForm((current) => ({ ...current, visibility: e.target.value }))}>
                       <option value="public">Public - 팀원 모두 검색 가능</option>
                       <option value="private">Private - 작성자만 검색 가능</option>
                     </select>
-                    <textarea className="form-textarea" placeholder="문서 내용을 적어 주세요." value={documentForm.content} onChange={(e) => setDocumentForm((c) => ({ ...c, content: e.target.value }))} required />
+                    <textarea className="form-textarea" placeholder="문서 내용을 적어 주세요." value={documentForm.content} onChange={(e) => setDocumentForm((current) => ({ ...current, content: e.target.value }))} required />
                     <div className="form-actions">
                       <button className="primary-action" disabled={savingDoc} type="submit">{savingDoc ? "저장 중..." : editingDocId ? "수정 저장" : "저장하기"}</button>
                       <button className="secondary-action" onClick={() => { setEditingDocId(null); setDocumentForm(initialDocumentForm); }} type="button">입력 비우기</button>
-                      {searchingArchives ? <p className="loading-copy">AI가 계정 아카이브를 읽고 답을 찾는 중입니다.</p> : null}
                     </div>
                   </form>
                 </aside>
@@ -1071,16 +1018,13 @@ export default function Dashboard() {
                     <p className="sidebar-kicker">Quick Search</p>
                     <div className="example-list">
                       {exampleQueries.map((query) => (
-                        <button key={query} className="example-button" onClick={() => applyExampleQuery(query)} type="button">{query}</button>
+                        <button key={query} className="example-button" onClick={() => setDocFilters((current) => ({ ...current, query }))} type="button">{query}</button>
                       ))}
                     </div>
                   </section>
 
                   {searchingDocs ? (
-                    <LoadingAnswerCard
-                      title="AI가 요약 답변을 정리하고 있어요"
-                      description="검색 결과를 읽고 핵심만 추려서 답변을 만드는 중입니다."
-                    />
+                    <LoadingAnswerCard title="AI가 요약 답변을 정리하고 있어요" description="검색 결과를 읽고 핵심만 추려서 답변을 만드는 중입니다." />
                   ) : docSearchAnswer ? (
                     <article className="answer-card-ui">
                       <p className="panel-kicker">Generated Answer</p>
@@ -1117,7 +1061,6 @@ export default function Dashboard() {
                       <div><p className="panel-kicker">Documents</p><h3>접근 가능한 문서 목록</h3></div>
                       <span className="count-chip">{loadingDocs ? "loading..." : `${visibleDocs.length} visible`}</span>
                     </div>
-
                     {loadingDocs ? (
                       <div className="empty-state">문서를 불러오는 중입니다.</div>
                     ) : visibleDocs.length ? (
@@ -1133,9 +1076,7 @@ export default function Dashboard() {
                             </div>
                             <h4>{doc.title}</h4>
                             <p>{doc.summary || "요약 없음"}</p>
-                            <div className="tag-list">
-                              {(doc.tags ?? []).map((tag) => <span className="tag-chip" key={tag}>#{tag}</span>)}
-                            </div>
+                            <div className="tag-list">{(doc.tags ?? []).map((tag) => <span className="tag-chip" key={tag}>#{tag}</span>)}</div>
                             <div className="doc-meta-text">
                               <span>작성자: {doc.owner_email || "unknown"}</span>
                               <span>수정일: {formatDate(doc.updated_at || doc.created_at)}</span>
@@ -1162,8 +1103,8 @@ export default function Dashboard() {
                 <p className="hero-kicker">Account archive</p>
                 <h2 className="hero-heading">DB 로그인 정보, URL, IP를 AI로 찾는 계정 아카이브</h2>
                 <p className="hero-description">
-                  이 공간은 일반 로그인 승인과 별도로, 한 번 더 관리자 승인을 받은 사용자만 접근할 수 있습니다. 짧은 계정 정보라도
-                  검색 전용으로 정리해두고 “es 로그인 아이디”, “운영 DB URL”처럼 바로 찾아볼 수 있게 만들었습니다.
+                  이 공간은 일반 로그인 승인과 별도로 한 번 더 관리자 승인을 받은 사용자만 접근할 수 있습니다. 짧은 계정 정보도 검색 전용으로
+                  정리해두고 “es 로그인 아이디”, “운영 DB URL”처럼 바로 찾아볼 수 있게 만들었습니다.
                 </p>
               </section>
 
@@ -1193,27 +1134,15 @@ export default function Dashboard() {
                     <div className="search-grid">
                       <div className="search-input-wrap">
                         <span className="search-icon">⌕</span>
-                        <input
-                          className="search-input"
-                          placeholder="예: es 로그인 아이디, 운영 DB URL, Jenkins IP"
-                          value={archiveFilters.query}
-                          onChange={(event) => setArchiveFilters((current) => ({ ...current, query: event.target.value }))}
-                        />
+                        <input className="search-input" placeholder="예: es 로그인 아이디, 운영 DB URL, Jenkins IP" value={archiveFilters.query} onChange={(event) => setArchiveFilters((current) => ({ ...current, query: event.target.value }))} />
                       </div>
-
                       <div className="search-controls">
-                        <select className="search-select" value={archiveFilters.category} onChange={(e) => setArchiveFilters((c) => ({ ...c, category: e.target.value }))}>
+                        <select className="search-select" value={archiveFilters.category} onChange={(e) => setArchiveFilters((current) => ({ ...current, category: e.target.value }))}>
                           <option value="all">전체 카테고리</option>
-                          {archiveCategories.filter((item) => item.name !== "all").map((item) => (
-                            <option key={item.name} value={item.name}>{item.name}</option>
-                          ))}
+                          {archiveCategories.filter((item) => item.name !== "all").map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
                         </select>
-                        <button className="primary-action" onClick={handleArchiveSearch} type="button" disabled={searchingArchives}>
-                          {searchingArchives ? "검색 중..." : "아카이브 AI 검색"}
-                        </button>
-                        <button className="secondary-action" onClick={() => { setArchiveSearchAnswer(""); setArchiveSearchResults([]); setArchiveFilters({ query: "", category: "all" }); }} type="button">
-                          검색 초기화
-                        </button>
+                        <button className="primary-action" onClick={handleArchiveSearch} type="button" disabled={searchingArchives}>{searchingArchives ? "검색 중..." : "아카이브 AI 검색"}</button>
+                        <button className="secondary-action" onClick={() => { setArchiveSearchAnswer(""); setArchiveSearchResults([]); setArchiveFilters({ query: "", category: "all" }); }} type="button">검색 초기화</button>
                         <label className="toggle-row">
                           <input checked={generateArchiveAnswer} onChange={(e) => setGenerateArchiveAnswer(e.target.checked)} type="checkbox" />
                           <span>답변 요약 함께 생성</span>
@@ -1226,7 +1155,11 @@ export default function Dashboard() {
                     <div className="summary-icon">AI</div>
                     <div>
                       <p className="summary-kicker">아카이브 검색 요약</p>
-                      <p className="summary-text">{archiveSearchMessage || "민감한 계정 정보도 AI 검색으로 빠르게 찾을 수 있습니다."}</p>
+                      <p className="summary-text">
+                        {searchingArchives
+                          ? "AI가 계정 아카이브를 읽고 답을 찾는 중입니다. 잠시만 기다려 주세요."
+                          : archiveSearchMessage || "민감한 계정 정보도 AI 검색으로 빠르게 찾을 수 있습니다."}
+                      </p>
                     </div>
                   </section>
 
@@ -1237,17 +1170,16 @@ export default function Dashboard() {
                         <h3>{editingArchiveId ? "아카이브 수정" : "아카이브 등록"}</h3>
                         <p>이 공간은 검색 전용으로 쓰기 좋게 짧은 로그인 정보, URL, IP를 구조화해서 저장합니다.</p>
                       </div>
-
                       <form className="form-card" onSubmit={handleSaveArchive}>
-                        <input className="form-input" placeholder="제목" value={archiveForm.title} onChange={(e) => setArchiveForm((c) => ({ ...c, title: e.target.value }))} required />
-                        <input className="form-input" placeholder="카테고리" value={archiveForm.category} onChange={(e) => setArchiveForm((c) => ({ ...c, category: e.target.value }))} required />
-                        <input className="form-input" placeholder="서비스 이름" value={archiveForm.serviceName} onChange={(e) => setArchiveForm((c) => ({ ...c, serviceName: e.target.value }))} />
-                        <input className="form-input" placeholder="로그인 ID" value={archiveForm.loginId} onChange={(e) => setArchiveForm((c) => ({ ...c, loginId: e.target.value }))} />
-                        <input className="form-input" placeholder="URL" type="url" value={archiveForm.url} onChange={(e) => setArchiveForm((c) => ({ ...c, url: e.target.value }))} />
-                        <input className="form-input" placeholder="IP 주소" value={archiveForm.ipAddress} onChange={(e) => setArchiveForm((c) => ({ ...c, ipAddress: e.target.value }))} />
-                        <input className="form-input" placeholder="비밀번호 메모" value={archiveForm.passwordNote} onChange={(e) => setArchiveForm((c) => ({ ...c, passwordNote: e.target.value }))} />
-                        <input className="form-input" placeholder="태그 (쉼표로 구분)" value={archiveForm.tags} onChange={(e) => setArchiveForm((c) => ({ ...c, tags: e.target.value }))} />
-                        <textarea className="form-textarea" placeholder="추가 메모" value={archiveForm.notes} onChange={(e) => setArchiveForm((c) => ({ ...c, notes: e.target.value }))} />
+                        <input className="form-input" placeholder="제목" value={archiveForm.title} onChange={(e) => setArchiveForm((current) => ({ ...current, title: e.target.value }))} required />
+                        <input className="form-input" placeholder="카테고리" value={archiveForm.category} onChange={(e) => setArchiveForm((current) => ({ ...current, category: e.target.value }))} required />
+                        <input className="form-input" placeholder="서비스 이름" value={archiveForm.serviceName} onChange={(e) => setArchiveForm((current) => ({ ...current, serviceName: e.target.value }))} />
+                        <input className="form-input" placeholder="로그인 ID" value={archiveForm.loginId} onChange={(e) => setArchiveForm((current) => ({ ...current, loginId: e.target.value }))} />
+                        <input className="form-input" placeholder="URL" type="url" value={archiveForm.url} onChange={(e) => setArchiveForm((current) => ({ ...current, url: e.target.value }))} />
+                        <input className="form-input" placeholder="IP 주소" value={archiveForm.ipAddress} onChange={(e) => setArchiveForm((current) => ({ ...current, ipAddress: e.target.value }))} />
+                        <input className="form-input" placeholder="비밀번호 메모" value={archiveForm.passwordNote} onChange={(e) => setArchiveForm((current) => ({ ...current, passwordNote: e.target.value }))} />
+                        <input className="form-input" placeholder="태그 (쉼표로 구분)" value={archiveForm.tags} onChange={(e) => setArchiveForm((current) => ({ ...current, tags: e.target.value }))} />
+                        <textarea className="form-textarea" placeholder="추가 메모" value={archiveForm.notes} onChange={(e) => setArchiveForm((current) => ({ ...current, notes: e.target.value }))} />
                         <div className="form-actions">
                           <button className="primary-action" disabled={savingArchive} type="submit">{savingArchive ? "저장 중..." : editingArchiveId ? "수정 저장" : "저장하기"}</button>
                           <button className="secondary-action" onClick={() => { setEditingArchiveId(null); setArchiveForm(initialArchiveForm); }} type="button">입력 비우기</button>
@@ -1260,16 +1192,13 @@ export default function Dashboard() {
                         <p className="sidebar-kicker">Quick Search</p>
                         <div className="example-list">
                           {archiveExampleQueries.map((query) => (
-                            <button key={query} className="example-button" onClick={() => setArchiveFilters((c) => ({ ...c, query }))} type="button">{query}</button>
+                            <button key={query} className="example-button" onClick={() => setArchiveFilters((current) => ({ ...current, query }))} type="button">{query}</button>
                           ))}
                         </div>
                       </section>
 
                       {searchingArchives ? (
-                        <LoadingAnswerCard
-                          title="AI가 아카이브 답변을 정리하고 있어요"
-                          description="로그인 정보, URL, IP 관련 항목을 읽고 답변을 정리하는 중입니다."
-                        />
+                        <LoadingAnswerCard title="AI가 아카이브 답변을 정리하고 있어요" description="로그인 정보, URL, IP 관련 항목을 읽고 답변을 정리하는 중입니다." />
                       ) : archiveSearchAnswer ? (
                         <article className="answer-card-ui">
                           <p className="panel-kicker">Generated Answer</p>
@@ -1306,7 +1235,6 @@ export default function Dashboard() {
                           <div><p className="panel-kicker">Archive Items</p><h3>계정 아카이브 목록</h3></div>
                           <span className="count-chip">{loadingArchives ? "loading..." : `${filteredArchives.length} items`}</span>
                         </div>
-
                         {loadingArchives ? (
                           <div className="empty-state">계정 아카이브를 불러오는 중입니다.</div>
                         ) : filteredArchives.length ? (
@@ -1329,9 +1257,7 @@ export default function Dashboard() {
                                   <span>수정일: {formatDate(item.updated_at || item.created_at)}</span>
                                 </div>
                                 {item.notes ? <pre style={{ marginTop: 12 }}>{item.notes}</pre> : null}
-                                <div className="tag-list">
-                                  {(item.tags ?? []).map((tag) => <span className="tag-chip" key={tag}>#{tag}</span>)}
-                                </div>
+                                <div className="tag-list">{(item.tags ?? []).map((tag) => <span className="tag-chip" key={tag}>#{tag}</span>)}</div>
                                 <div className="doc-actions">
                                   <button className="secondary-action" onClick={() => beginEditArchive(item)} type="button">수정</button>
                                   <button className="danger-action" onClick={() => handleDeleteArchive(item.id)} type="button">삭제</button>
@@ -1388,15 +1314,12 @@ export default function Dashboard() {
 
             <div className="detail-actions">
               {selectedDoc.notion_url ? (
-                <a className="primary-action detail-link" href={selectedDoc.notion_url} rel="noreferrer" target="_blank">Notion 바로가기</a>
+                <a className="primary-action detail-link" href={selectedDoc.notion_url} rel="noreferrer" target="_blank">
+                  Notion 바로가기
+                </a>
               ) : null}
               {isSelectedDocOwner ? (
-                <button
-                  className="secondary-action"
-                  disabled={shareLoading}
-                  onClick={() => handleToggleDocVisibility(selectedDoc.visibility === "private" ? "public" : "private")}
-                  type="button"
-                >
+                <button className="secondary-action" disabled={shareLoading} onClick={() => handleToggleDocVisibility(selectedDoc.visibility === "private" ? "public" : "private")} type="button">
                   {shareLoading ? "변경 중..." : selectedDoc.visibility === "private" ? "Public으로 전환" : "Private으로 전환"}
                 </button>
               ) : null}
