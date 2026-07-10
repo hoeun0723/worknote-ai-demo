@@ -106,8 +106,7 @@ export default function Dashboard() {
 
   const isApproved = accessProfile?.approval_status === "approved";
   const isAdmin = isApproved && accessProfile?.role === "admin";
-  const retryCount = accessProfile?.retry_request_count ?? 0;
-  const remainingRetries = Math.max(0, 3 - retryCount);
+  const remainingRetries = Math.max(0, 3 - (accessProfile?.retry_request_count ?? 0));
 
   useEffect(() => {
     setSupabase(createSupabaseBrowserClient());
@@ -470,9 +469,12 @@ export default function Dashboard() {
     return (
       <main className="gate-shell">
         <section className="gate-card">
-          <p className="gate-kicker">Team Access</p>
-          <h1>접속 권한을 확인하는 중입니다.</h1>
-          <p>승인 상태와 계정 정보를 불러오고 있습니다.</p>
+          <p className="gate-kicker">Geoeojeong Service</p>
+          <h1>“그거 어디에 정리했더라?”를 찾는 중이에요.</h1>
+          <p>
+            그어정 서비스의 접속 권한과 계정 상태를 확인하고 있습니다. 잠시만 기다리면 승인 여부에 따라 다음 화면으로
+            안내해드릴게요.
+          </p>
         </section>
       </main>
     );
@@ -482,9 +484,15 @@ export default function Dashboard() {
     return (
       <main className="gate-shell">
         <section className="gate-card">
-          <p className="gate-kicker">Team Access</p>
-          <h1>팀 전용 문서 포털</h1>
-          <p>회원가입 후 이메일 인증과 관리자 승인이 완료되어야 문서 조회와 등록이 가능합니다.</p>
+          <p className="gate-kicker">Geoeojeong Service</p>
+          <h1>“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h1>
+          <p>
+            그어정 서비스는 Notion에 흩어진 업무 기록, 오류 해결 문서, 메모를 한곳에 모아 찾기 쉽게 도와줍니다.
+            회원가입 후 이메일 인증과 관리자 승인이 완료되면 문서 조회와 등록이 가능합니다.
+          </p>
+          <p className="gate-subtext">
+            public 문서는 팀원 모두가 보고, private 문서는 로그인한 본인만 검색할 수 있도록 분리되어 있어요.
+          </p>
 
           <div className="gate-form">
             <input
@@ -525,11 +533,14 @@ export default function Dashboard() {
     return (
       <main className="gate-shell">
         <section className="gate-card">
-          <p className="gate-kicker">Approval Pending</p>
+          <p className="gate-kicker">Geoeojeong Service</p>
           <h1>{approvalLabel(accessProfile?.approval_status)}</h1>
           <p>
-            현재 계정은 <strong>{session.user.email}</strong> 입니다. 관리자 승인이 완료되면 문서 조회와 문서 등록이
-            가능해집니다.
+            “그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서, 그어정 서비스에 접속 중입니다. 현재 계정은{" "}
+            <strong>{session.user.email}</strong> 이고, 관리자 승인이 완료되면 메인 화면으로 들어갈 수 있습니다.
+          </p>
+          <p className="gate-subtext">
+            public 문서는 팀원 모두가 보고, private 문서는 로그인한 본인만 검색할 수 있도록 분리되어 있습니다.
           </p>
           <div className={`status-pill ${isRejected ? "rejected" : ""}`}>
             {approvalLabel(accessProfile?.approval_status)}
@@ -575,7 +586,7 @@ export default function Dashboard() {
             <div className="brand-mark">W</div>
             <div>
               <h1 className="brand-title">WorkNote AI</h1>
-              <p className="brand-subtitle">업무 문서 검색 비서</p>
+              <p className="brand-subtitle">그어정 서비스</p>
             </div>
           </div>
 
@@ -644,7 +655,7 @@ export default function Dashboard() {
               <div className="brand-mark">W</div>
               <div>
                 <h1 className="brand-title">WorkNote AI</h1>
-                <p className="brand-subtitle">업무 문서 검색 비서</p>
+                <p className="brand-subtitle">그어정 서비스</p>
               </div>
             </div>
           </header>
@@ -704,10 +715,10 @@ export default function Dashboard() {
           <section className="hero-card">
             <div className="hero-floating-badge">Notion-ready Knowledge Assistant</div>
             <p className="hero-kicker">AI document search</p>
-            <h2 className="hero-heading">흩어진 회의록과 장애 대응 문서를 빠르게 찾는 AI 문서 검색 서비스</h2>
+            <h2 className="hero-heading">“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h2>
             <p className="hero-description">
-              이 사이트는 관리자 승인을 받은 팀원만 접근할 수 있습니다. 그 안에서 public 문서는 팀원 전체가,
-              private 문서는 작성자 본인만 볼 수 있습니다.
+              public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다. Notion에
+              흩어진 업무 기록, 오류 해결 문서, 메모를 카테고리별로 저장하고 관련 문서를 찾아보세요.
             </p>
 
             <div className="hero-stats">
@@ -736,7 +747,7 @@ export default function Dashboard() {
                 <span className="search-icon">⌕</span>
                 <input
                   className="search-input"
-                  placeholder="예: Jenkins에서 브랜치 배포 전 확인할 문서 찾아줘"
+                  placeholder="예: Jenkins에서 배포 전에 확인할 문서 찾아줘"
                   value={filters.query}
                   onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
                 />
