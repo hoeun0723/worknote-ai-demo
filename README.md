@@ -62,10 +62,27 @@ npm run build
 
 문서 조회는 DB 정책과 검색 함수 둘 다 같은 규칙을 따릅니다.
 
-- 로그인 안 함: `public` 문서만 조회 가능
-- 로그인 함: `public` 문서 + 내가 소유한 `private` 문서 조회 가능
+- 로그인 안 함: 메인 화면 접근 불가
+- 로그인 함 + 승인 대기: 승인 대기 화면만 표시
+- 로그인 함 + 승인 완료: `public` 문서 + 내가 소유한 `private` 문서 조회 가능
 
 문서 수정/삭제는 본인 문서만 가능합니다.
+
+## 팀 승인 흐름
+
+- 회원가입 직후 사용자는 `pending` 상태로 생성됩니다.
+- 관리자 승인 전에는 문서 조회, 문서 등록, AI 검색이 모두 차단됩니다.
+- 관리자만 승인 대기 중인 팀원을 `approve` 또는 `reject` 할 수 있습니다.
+
+첫 관리자 계정은 Supabase SQL Editor에서 직접 지정해야 합니다.
+
+```sql
+update public.app_users
+set role = 'admin',
+    approval_status = 'approved',
+    approved_at = now()
+where email = 'YOUR_ADMIN_EMAIL';
+```
 
 ## AI 검색 동작
 
@@ -87,6 +104,7 @@ npm run build
 ## 현재 구현된 기능
 
 - 이메일/비밀번호 기반 Supabase 로그인 UI
+- 관리자 승인 기반 팀 접근 제어
 - 문서 생성/수정/삭제
 - Public / Private 공개 범위 설정
 - 접근 가능한 문서 목록 조회

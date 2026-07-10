@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getCurrentAccessContext, requireApprovedMember } from "@/lib/access";
 import { syncDocumentEmbeddings, validateDocumentInput } from "@/lib/documents";
 
 export async function GET() {
-  const supabase = await createSupabaseServerClient();
+  const context = await getCurrentAccessContext();
+  const guard = requireApprovedMember(context);
 
-  const { data, error } = await supabase
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  const { data, error } = await context.supabase
     .from("documents")
     .select("*")
     .order("updated_at", { ascending: false });
@@ -18,50 +23,51 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const context = await getCurrentAccessContext();
+  const guard = requireApprovedMember(context);
 
-  if (!user) {
-    return NextResponse.json({ error: "로그인 후 문서를 저장할 수 있습니다." }, { status: 401 });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   try {
     const payload = validateDocumentInput(await request.json());
 
-    const { data, error } = await supabase
+    const { data, error } = await context.supabase
       .from("documents")
       .insert({
         ...payload,
-        owner_id: user.id,
-        owner_email: user.email,
+        owner_id: context.user.id,
+        owner_email: context.user.email,
         embedding_status: "pending",
       })
       .select("*")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
     let embeddingStatus = "pending";
 
     try {
       embeddingStatus = await syncDocumentEmbeddings({
-        supabase,
+        supabase: context.supabase,
         document: {
           ...data,
           ...payload,
-          owner_id: user.id,
+          owner_id: context.user.id,
         },
       });
     } catch (embeddingError) {
-      await supabase
+      await context.supabase
         .from("documents")
         .update({
           embedding_status: "error",
           embedding_error: embeddingError.message,
         })
         .eq("id", data.id);
+
       embeddingStatus = "error";
     }
 
