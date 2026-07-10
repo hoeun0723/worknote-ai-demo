@@ -36,6 +36,8 @@ const archiveExampleQueries = [
   "Jenkins IP 정보",
 ];
 
+const RESEND_COOLDOWN_SECONDS = 60;
+
 function visibilityLabel(visibility) {
   return visibility === "private" ? "Private" : "Public";
 }
@@ -94,6 +96,37 @@ function getAuthErrorMessage(error) {
   return message || "인증 처리 중 문제가 발생했습니다.";
 }
 
+function mapAuthErrorMessage(error) {
+  const message = String(error?.message || "");
+
+  if (message.includes("Email not confirmed")) {
+    return "이메일 인증 전입니다. 메일함에서 인증을 완료해 주세요.";
+  }
+  if (message.includes("email rate limit exceeded") || message.toLowerCase().includes("rate limit")) {
+    return "인증 메일 요청이 너무 많아 잠시 제한되었습니다. 잠시 후 다시 시도하거나, 이미 도착한 인증 메일이 있는지 메일함과 스팸함을 확인해 주세요.";
+  }
+  if (message.includes("Invalid login credentials")) {
+    return "이메일/비밀번호가 일치하지 않습니다.";
+  }
+  if (message.includes("User already registered")) {
+    return "이미 가입된 이메일입니다. 로그인하거나 인증 메일을 다시 요청해 주세요.";
+  }
+  if (message.includes("Password should be at least")) {
+    return "비밀번호가 너무 짧습니다. 더 길게 입력해 주세요.";
+  }
+
+  return message || "인증 처리 중 문제가 발생했습니다.";
+}
+
+function formatCooldown(seconds) {
+  if (seconds <= 0) return "지금 다시 요청 가능";
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (!minutes) return `${remainingSeconds}초 후 다시 요청 가능`;
+  return `${minutes}분 ${remainingSeconds}초 후 다시 요청 가능`;
+}
+
 function LoadingAnswerCard({ title, description }) {
   return (
     <article className="answer-card-ui answer-card-loading" aria-live="polite">
@@ -114,6 +147,11 @@ export default function Dashboard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const [accessLoading, setAccessLoading] = useState(true);
   const [accessProfile, setAccessProfile] = useState(null);
@@ -165,6 +203,8 @@ export default function Dashboard() {
   const isArchiveApproved = isApproved && accessProfile?.archive_approval_status === "approved";
   const remainingRetries = Math.max(0, 3 - (accessProfile?.retry_request_count ?? 0));
   const isSelectedDocOwner = Boolean(session?.user?.id && selectedDoc?.owner_id === session.user.id);
+  const authBusy = signingIn || signingUp || resendingVerification;
+  const resendTargetEmail = verificationEmail || email.trim();
 
   useEffect(() => {
     setSupabase(createSupabaseBrowserClient());
@@ -223,6 +263,16 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+
+    const timer = window.setInterval(() => {
+      setResendCooldown((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
+
   async function loadAccessState(options = {}) {
     if (!options.silent) {
       setAccessLoading(true);
@@ -280,6 +330,32 @@ export default function Dashboard() {
   }
 
   async function handleSignUp() {
+    if (!supabase || authBusy) return;
+
+    setSigningUp(true);
+    setAuthMessage("");
+
+    try {
+      const normalizedEmail = email.trim();
+      const { error } = await supabase.auth.signUp({ email: normalizedEmail, password });
+
+      if (error) {
+        setAuthMessage(mapAuthErrorMessage(error));
+        if (normalizedEmail) {
+          setVerificationEmail(normalizedEmail);
+        }
+        return;
+      }
+
+      setVerificationEmail(normalizedEmail);
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      setAuthMessage("회원가입이 완료되었습니다. 이메일 인증과 관리자 승인이 모두 필요합니다. 메일함과 스팸함을 확인해 주세요.");
+      await loadAccessState();
+      return;
+    } finally {
+      setSigningUp(false);
+    }
+
     if (!supabase) return;
 
     setAuthMessage("");
@@ -295,6 +371,42 @@ export default function Dashboard() {
   }
 
   async function handleSignIn() {
+    if (!supabase || authBusy) return;
+
+    setSigningIn(true);
+    setAuthMessage("");
+
+    try {
+      const normalizedEmail = email.trim();
+      const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+
+      if (error) {
+        setAuthMessage(mapAuthErrorMessage(error));
+        if (normalizedEmail) {
+          setVerificationEmail(normalizedEmail);
+        }
+        return;
+      }
+
+      const payload = await loadAccessState();
+      const approvalStatus = payload?.profile?.approval_status;
+
+      if (approvalStatus === "pending") {
+        setAuthMessage("이메일 인증은 완료되었지만, 아직 관리자 승인이 필요합니다.");
+        return;
+      }
+
+      if (approvalStatus === "rejected") {
+        setAuthMessage("관리자 승인이 거절되었습니다.");
+        return;
+      }
+
+      setAuthMessage("로그인되었습니다.");
+      return;
+    } finally {
+      setSigningIn(false);
+    }
+
     if (!supabase) return;
 
     setAuthMessage("");
@@ -319,6 +431,39 @@ export default function Dashboard() {
     }
 
     setAuthMessage("로그인되었습니다.");
+  }
+
+  async function handleResendVerification() {
+    if (!supabase || authBusy || resendCooldown > 0 || !resendTargetEmail) return;
+
+    setResendingVerification(true);
+    setAuthMessage("");
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: resendTargetEmail,
+      });
+
+      if (error) {
+        setAuthMessage(mapAuthErrorMessage(error));
+        if (String(error?.message || "").toLowerCase().includes("rate limit")) {
+          setResendCooldown(RESEND_COOLDOWN_SECONDS);
+        }
+        return;
+      }
+
+      setVerificationEmail(resendTargetEmail);
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      setAuthMessage("인증 메일을 다시 보냈습니다. 메일함과 스팸함을 확인한 뒤, 인증 후 다시 로그인해 주세요.");
+    } finally {
+      setResendingVerification(false);
+    }
+  }
+
+  function handleRetryLoginAttempt() {
+    setAuthMessage("");
+    void handleSignIn();
   }
 
   async function handleSignOut() {
@@ -756,6 +901,46 @@ export default function Dashboard() {
   }
 
   if (!session) {
+    return (
+      <main className="gate-shell">
+        <section className="gate-card">
+          <p className="gate-kicker">Geoeojeong Service</p>
+          <h1>“그거 어디에 정리했더라?”를 해결하는 AI 문서 검색 비서</h1>
+          <p>그어정 서비스는 Notion에 흩어진 업무 기록, 오류 해결 문서, 메모를 한곳에 모아 찾기 쉽게 도와줍니다.</p>
+          <p className="gate-subtext">public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다.</p>
+
+          <div className="gate-form">
+            <input className="gate-input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="이메일" type="email" />
+            <input className="gate-input" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="비밀번호" type="password" />
+            <div className="gate-actions">
+              <button className="primary-action" disabled={authBusy} onClick={handleSignIn} type="button">
+                {signingIn ? "로그인 중..." : "로그인"}
+              </button>
+              <button className="secondary-action" disabled={authBusy} onClick={handleSignUp} type="button">
+                {signingUp ? "가입 중..." : "회원가입"}
+              </button>
+            </div>
+            <div className={`helper-banner ${resendCooldown > 0 ? "warn" : ""}`}>
+              이메일 인증과 관리자 승인이 끝나면 메인 화면에 들어갈 수 있습니다.
+            </div>
+            <div className="gate-actions gate-actions-compact">
+              <button className="secondary-action" disabled={authBusy || resendCooldown > 0 || !resendTargetEmail} onClick={handleResendVerification} type="button">
+                {resendingVerification ? "재전송 중..." : "인증 메일 재전송"}
+              </button>
+              <button className="ghost-link" disabled={authBusy || !email.trim() || !password} onClick={handleRetryLoginAttempt} type="button">
+                다시 로그인 시도
+              </button>
+            </div>
+            <p className="gate-subtext">
+              {resendTargetEmail ? `${resendTargetEmail} 기준으로 인증 메일을 다시 보낼 수 있습니다.` : "회원가입 후 인증 메일 재전송 버튼을 사용할 수 있습니다."}
+            </p>
+            <p className="gate-subtext">{formatCooldown(resendCooldown)}</p>
+            {authMessage ? <p className="gate-message">{authMessage}</p> : null}
+          </div>
+        </section>
+      </main>
+    );
+
     return (
       <main className="gate-shell">
         <section className="gate-card">
