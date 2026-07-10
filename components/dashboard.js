@@ -816,6 +816,7 @@ export default function Dashboard() {
               <p className="brand-subtitle">그어정 서비스</p>
             </div>
           </div>
+        </section>
 
           <section className="sidebar-section sidebar-auth">
             <div className="sidebar-header-row">
