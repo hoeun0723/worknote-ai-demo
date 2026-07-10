@@ -147,6 +147,10 @@ export default function Dashboard() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
   const [verificationEmail, setVerificationEmail] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
@@ -464,6 +468,44 @@ export default function Dashboard() {
   function handleRetryLoginAttempt() {
     setAuthMessage("");
     void handleSignIn();
+  }
+
+  async function handleChangePassword() {
+    if (!supabase || passwordSaving) return;
+
+    setPasswordMessage("");
+
+    if (!newPassword || !confirmNewPassword) {
+      setPasswordMessage("새 비밀번호와 확인 비밀번호를 모두 입력해 주세요.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordMessage("비밀번호는 8자 이상으로 입력해 주세요.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordMessage("새 비밀번호와 확인 비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setPasswordSaving(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (error) {
+        setPasswordMessage(mapAuthErrorMessage(error));
+        return;
+      }
+
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordMessage("비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용해 주세요.");
+    } finally {
+      setPasswordSaving(false);
+    }
   }
 
   async function handleSignOut() {
@@ -1016,6 +1058,29 @@ export default function Dashboard() {
               <p className="sidebar-note">일반 승인: {approvalLabel(accessProfile?.approval_status)}</p>
               <p className="sidebar-note">아카이브 승인: {approvalLabel(accessProfile?.archive_approval_status)}</p>
               <button className="sidebar-button sidebar-button-ghost" onClick={handleSignOut} type="button">로그아웃</button>
+              <input
+                className="sidebar-input"
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="새 비밀번호"
+                type="password"
+                value={newPassword}
+              />
+              <input
+                className="sidebar-input"
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                placeholder="새 비밀번호 확인"
+                type="password"
+                value={confirmNewPassword}
+              />
+              <button
+                className="sidebar-button sidebar-button-primary"
+                disabled={passwordSaving}
+                onClick={handleChangePassword}
+                type="button"
+              >
+                {passwordSaving ? "변경 중..." : "비밀번호 변경"}
+              </button>
+              {passwordMessage ? <p className="sidebar-help">{passwordMessage}</p> : null}
               {authMessage ? <p className="sidebar-help">{authMessage}</p> : null}
             </div>
           </section>
