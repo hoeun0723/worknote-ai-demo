@@ -1,35 +1,35 @@
 import { NextResponse } from "next/server";
-import { getCurrentAccessContext, requireApprovedMember } from "@/lib/access";
-import { syncDocumentEmbeddings, validateDocumentInput } from "@/lib/documents";
+import { getCurrentAccessContext, requireArchiveApprovedMember } from "@/lib/access";
+import { syncArchiveEmbeddings, validateArchiveInput } from "@/lib/archive";
 
 export async function PATCH(request, context) {
   const { id } = await context.params;
   const accessContext = await getCurrentAccessContext();
-  const guard = requireApprovedMember(accessContext);
+  const guard = requireArchiveApprovedMember(accessContext);
 
   if (!guard.ok) {
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   try {
-    const payload = validateDocumentInput(await request.json());
+    const payload = validateArchiveInput(await request.json());
 
     const { data: existing, error: existingError } = await accessContext.supabase
-      .from("documents")
+      .from("account_archives")
       .select("*")
       .eq("id", id)
       .single();
 
     if (existingError || !existing) {
-      return NextResponse.json({ error: "문서를 찾을 수 없습니다." }, { status: 404 });
+      return NextResponse.json({ error: "아카이브 항목을 찾을 수 없습니다." }, { status: 404 });
     }
 
     if (existing.owner_id !== accessContext.user.id) {
-      return NextResponse.json({ error: "본인 문서만 수정할 수 있습니다." }, { status: 403 });
+      return NextResponse.json({ error: "본인 아카이브만 수정할 수 있습니다." }, { status: 403 });
     }
 
     const { data, error } = await accessContext.supabase
-      .from("documents")
+      .from("account_archives")
       .update({
         ...payload,
         embedding_status: "pending",
@@ -39,16 +39,14 @@ export async function PATCH(request, context) {
       .select("*")
       .single();
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     let embeddingStatus = "pending";
 
     try {
-      embeddingStatus = await syncDocumentEmbeddings({
+      embeddingStatus = await syncArchiveEmbeddings({
         supabase: accessContext.supabase,
-        document: {
+        archive: {
           ...data,
           ...payload,
           owner_id: accessContext.user.id,
@@ -56,7 +54,7 @@ export async function PATCH(request, context) {
       });
     } catch (embeddingError) {
       await accessContext.supabase
-        .from("documents")
+        .from("account_archives")
         .update({
           embedding_status: "error",
           embedding_error: embeddingError.message,
@@ -67,7 +65,7 @@ export async function PATCH(request, context) {
     }
 
     return NextResponse.json({
-      document: data,
+      archive: data,
       embeddingStatus,
     });
   } catch (error) {
@@ -78,27 +76,27 @@ export async function PATCH(request, context) {
 export async function DELETE(_request, context) {
   const { id } = await context.params;
   const accessContext = await getCurrentAccessContext();
-  const guard = requireApprovedMember(accessContext);
+  const guard = requireArchiveApprovedMember(accessContext);
 
   if (!guard.ok) {
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const { data: existing, error: existingError } = await accessContext.supabase
-    .from("documents")
+    .from("account_archives")
     .select("id, owner_id")
     .eq("id", id)
     .single();
 
   if (existingError || !existing) {
-    return NextResponse.json({ error: "문서를 찾을 수 없습니다." }, { status: 404 });
+    return NextResponse.json({ error: "아카이브 항목을 찾을 수 없습니다." }, { status: 404 });
   }
 
   if (existing.owner_id !== accessContext.user.id) {
-    return NextResponse.json({ error: "본인 문서만 삭제할 수 있습니다." }, { status: 403 });
+    return NextResponse.json({ error: "본인 아카이브만 삭제할 수 있습니다." }, { status: 403 });
   }
 
-  const { error } = await accessContext.supabase.from("documents").delete().eq("id", id);
+  const { error } = await accessContext.supabase.from("account_archives").delete().eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

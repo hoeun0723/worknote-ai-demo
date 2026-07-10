@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCurrentAccessContext, requireApprovedMember } from "@/lib/access";
-import { syncDocumentEmbeddings, validateDocumentInput } from "@/lib/documents";
+import { getCurrentAccessContext, requireArchiveApprovedMember } from "@/lib/access";
+import { syncArchiveEmbeddings, validateArchiveInput } from "@/lib/archive";
 
 export async function GET() {
   const context = await getCurrentAccessContext();
-  const guard = requireApprovedMember(context);
+  const guard = requireArchiveApprovedMember(context);
 
   if (!guard.ok) {
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const { data, error } = await context.supabase
-    .from("documents")
+    .from("account_archives")
     .select("*")
     .order("updated_at", { ascending: false });
 
@@ -19,22 +19,22 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ documents: data ?? [] });
+  return NextResponse.json({ archives: data ?? [] });
 }
 
 export async function POST(request) {
   const context = await getCurrentAccessContext();
-  const guard = requireApprovedMember(context);
+  const guard = requireArchiveApprovedMember(context);
 
   if (!guard.ok) {
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   try {
-    const payload = validateDocumentInput(await request.json());
+    const payload = validateArchiveInput(await request.json());
 
     const { data, error } = await context.supabase
-      .from("documents")
+      .from("account_archives")
       .insert({
         ...payload,
         owner_id: context.user.id,
@@ -44,16 +44,14 @@ export async function POST(request) {
       .select("*")
       .single();
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     let embeddingStatus = "pending";
 
     try {
-      embeddingStatus = await syncDocumentEmbeddings({
+      embeddingStatus = await syncArchiveEmbeddings({
         supabase: context.supabase,
-        document: {
+        archive: {
           ...data,
           ...payload,
           owner_id: context.user.id,
@@ -61,7 +59,7 @@ export async function POST(request) {
       });
     } catch (embeddingError) {
       await context.supabase
-        .from("documents")
+        .from("account_archives")
         .update({
           embedding_status: "error",
           embedding_error: embeddingError.message,
@@ -72,7 +70,7 @@ export async function POST(request) {
     }
 
     return NextResponse.json({
-      document: data,
+      archive: data,
       embeddingStatus,
     });
   } catch (error) {
