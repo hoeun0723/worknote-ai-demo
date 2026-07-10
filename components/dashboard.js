@@ -103,10 +103,12 @@ export default function Dashboard() {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [adminActionLoading, setAdminActionLoading] = useState("");
   const [retryLoading, setRetryLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
 
   const isApproved = accessProfile?.approval_status === "approved";
   const isAdmin = isApproved && accessProfile?.role === "admin";
   const remainingRetries = Math.max(0, 3 - (accessProfile?.retry_request_count ?? 0));
+  const isSelectedDocOwner = Boolean(session?.user?.id && selectedDoc?.owner_id === session.user.id);
 
   useEffect(() => {
     setSupabase(createSupabaseBrowserClient());
@@ -296,6 +298,55 @@ export default function Dashboard() {
       await loadAccessState();
     } finally {
       setRetryLoading(false);
+    }
+  }
+
+  async function handleToggleDocVisibility(nextVisibility) {
+    if (!selectedDoc) return;
+
+    setShareLoading(true);
+    setSearchMessage("");
+
+    try {
+      const response = await fetch(`/api/documents/${selectedDoc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selectedDoc.title,
+          category: selectedDoc.category,
+          tags: selectedDoc.tags ?? [],
+          notionUrl: selectedDoc.notion_url ?? "",
+          visibility: nextVisibility,
+          content: selectedDoc.content,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setSearchMessage(payload.error ?? "문서 공개 범위를 변경하지 못했습니다.");
+        return;
+      }
+
+      const nextDoc = payload.document
+        ? {
+            ...selectedDoc,
+            ...payload.document,
+          }
+        : {
+            ...selectedDoc,
+            visibility: nextVisibility,
+          };
+
+      setSelectedDoc(nextDoc);
+      setDocs((current) => current.map((doc) => (doc.id === nextDoc.id ? { ...doc, ...nextDoc } : doc)));
+      setSearchMessage(
+        nextVisibility === "public"
+          ? "이 문서를 public으로 전환했습니다. 이제 팀원들도 검색할 수 있습니다."
+          : "이 문서를 private으로 전환했습니다. 이제 작성자만 검색할 수 있습니다."
+      );
+    } finally {
+      setShareLoading(false);
     }
   }
 
@@ -491,7 +542,7 @@ export default function Dashboard() {
             회원가입 후 이메일 인증과 관리자 승인이 완료되면 문서 조회와 등록이 가능합니다.
           </p>
           <p className="gate-subtext">
-            public 문서는 팀원 모두가 보고, private 문서는 로그인한 본인만 검색할 수 있도록 분리되어 있어요.
+            public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다.
           </p>
 
           <div className="gate-form">
@@ -540,17 +591,11 @@ export default function Dashboard() {
             <strong>{session.user.email}</strong> 이고, 관리자 승인이 완료되면 메인 화면으로 들어갈 수 있습니다.
           </p>
           <p className="gate-subtext">
-            public 문서는 팀원 모두가 보고, private 문서는 로그인한 본인만 검색할 수 있도록 분리되어 있습니다.
+            public 문서는 누구나 검색하고, private 문서는 로그인한 사용자만 검색할 수 있도록 분리했습니다.
           </p>
-          <div className={`status-pill ${isRejected ? "rejected" : ""}`}>
-            {approvalLabel(accessProfile?.approval_status)}
-          </div>
-          <p className="gate-subtext">
-            {isRejected ? "관리자 승인이 거절되었습니다." : "관리자 승인이 필요합니다."}
-          </p>
-          {isRejected ? (
-            <p className="gate-subtext">재요청 가능 횟수: {remainingRetries}회 남음 (최대 3회)</p>
-          ) : null}
+          <div className={`status-pill ${isRejected ? "rejected" : ""}`}>{approvalLabel(accessProfile?.approval_status)}</div>
+          <p className="gate-subtext">{isRejected ? "관리자 승인이 거절되었습니다." : "관리자 승인이 필요합니다."}</p>
+          {isRejected ? <p className="gate-subtext">재요청 가능 횟수: {remainingRetries}회 남음 (최대 3회)</p> : null}
           <div className="gate-actions">
             <button className="secondary-action" onClick={loadAccessState} type="button">
               상태 새로고침
@@ -1030,6 +1075,20 @@ export default function Dashboard() {
                 <a className="primary-action detail-link" href={selectedDoc.notion_url} rel="noreferrer" target="_blank">
                   Notion 바로가기
                 </a>
+              ) : null}
+              {isSelectedDocOwner ? (
+                <button
+                  className="secondary-action"
+                  disabled={shareLoading}
+                  onClick={() => handleToggleDocVisibility(selectedDoc.visibility === "private" ? "public" : "private")}
+                  type="button"
+                >
+                  {shareLoading
+                    ? "변경 중..."
+                    : selectedDoc.visibility === "private"
+                      ? "Public으로 전환"
+                      : "Private으로 전환"}
+                </button>
               ) : null}
               <button className="secondary-action" onClick={() => setSelectedDoc(null)} type="button">
                 닫기
